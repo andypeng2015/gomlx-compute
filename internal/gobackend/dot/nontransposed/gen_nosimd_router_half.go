@@ -32,7 +32,7 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 	klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
 	matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
 	matricesPerWorker = min(matricesPerWorker, batchSize)
-	if matricesPerWorker < 2 {
+	if matricesPerWorker > batchSize/2 {
 		// The overhead of distributing the processing is not worth it:
 		//alt:generic smallNoSIMDGeneric(
 		smallNoSIMDHalfPrecision( //alt:half

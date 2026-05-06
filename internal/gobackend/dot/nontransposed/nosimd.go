@@ -34,7 +34,7 @@ var (
 
 	// Minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	noSIMDMinMatMulFlopsPerWorker = 16 * 1024
+	noSIMDMinMatMulFlopsPerWorker = 32 * 1024
 )
 
 func init() {
