@@ -469,6 +469,13 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	if err != nil {
 		return nil, err
 	}
+
+	if params.implementation != nil {
+		// Use registered implementation.
+		CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
+		return output, nil
+	}
+
 	switch params.execPath {
 	case BlockedPath, CheckPath:
 		// Inputs are pre-blocked at graph-build time. Extract block metadata from input nodes.

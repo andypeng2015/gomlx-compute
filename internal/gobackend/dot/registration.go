@@ -28,9 +28,11 @@ func (key *ImplementationKey) String() string {
 //
 // The output will always be shaped [batchSize, lhsCross, rhsCross], and the required space must have been
 // pre-allocated.
-type DotGeneralExecFn[I, O dtypes.Supported] func(
+type DotGeneralExecFn[I, O interface {
+	dtypes.Number | dtypes.NumberHalfPrecision
+}] func(
 	lhs, rhs []I,
-	batchSize, lhsCross, lhsContracting, rhsCross, rhsContracting,
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O,
 	pool *workerspool.Pool)
 
@@ -42,7 +44,11 @@ type ImplementationRegistration struct {
 }
 
 var (
-	registeredAlgorithms = make(map[ImplementationKey]*ImplementationRegistration)
+	registeredImplementations = make(map[ImplementationKey]*ImplementationRegistration)
+
+	// testRegisteredImplementations is used to store the registered algorithms during tests.
+	// They override registeredAlgorithms if set.
+	testRegisteredImplementations map[ImplementationKey]*ImplementationRegistration
 )
 
 // RegisterImplementation registers a DotGeneral algorithm implementation for a specific
@@ -51,22 +57,41 @@ var (
 // The name is simply a human-readable identifier for the algorithm, used in logging.
 //
 // This should only be called during initialization.
-func RegisterImplementation[I, O dtypes.Supported](
+func RegisterImplementation[I, O interface {
+	dtypes.Number | dtypes.NumberHalfPrecision
+}](
 	name string,
 	layout Layout, inputDType, outputDType dtypes.DType,
-	implFn DotGeneralExecFn[I, O], priority gobackend.RegisterPriority) {
+	implFn DotGeneralExecFn[I, O], priority gobackend.RegisterPriority,
+	forTests bool) {
+
+	// Use a separate map for tests so they don't interfere with each other.
+	registration := registeredImplementations
+	if forTests {
+		registration = testRegisteredImplementations
+		if registration == nil {
+			registration = make(map[ImplementationKey]*ImplementationRegistration)
+			testRegisteredImplementations = registration
+		}
+	}
+
 	key := ImplementationKey{Layout: layout, InputDType: inputDType, OutputDType: outputDType}
-	current, found := registeredAlgorithms[key]
+	current, found := registration[key]
 	if found && priority < current.priority {
 		klog.V(1).Infof("DotGeneral algorithm %q for key %s not registered since priority %d is lower than current priority %d",
 			name, key, priority, current.priority)
 		return
 	}
-	registeredAlgorithms[key] = &ImplementationRegistration{
+	registration[key] = &ImplementationRegistration{
 		name:     name,
 		implFn:   implFn,
 		priority: priority,
 	}
+}
+
+// ResetTestRegistrations resets the test registrations.
+func ResetTestRegistrations() {
+	testRegisteredImplementations = nil
 }
 
 // FindRegisteredImplementation returns the registered implementation for the given
@@ -75,5 +100,60 @@ func RegisterImplementation[I, O dtypes.Supported](
 // This can be used during the building of the graph, and the result cached for execution.
 func FindRegisteredImplementation(layout Layout, inputDType, outputDType dtypes.DType) *ImplementationRegistration {
 	key := ImplementationKey{Layout: layout, InputDType: inputDType, OutputDType: outputDType}
-	return registeredAlgorithms[key]
+	if testRegisteredImplementations != nil {
+		if reg := testRegisteredImplementations[key]; reg != nil {
+			klog.V(1).Infof("DotGeneral algorithm %q for key %s registered for testing will be used", reg.name, key)
+			return reg
+		}
+	}
+	return registeredImplementations[key]
+}
+
+// CallRegisteredImplementation calls the registered implementation for the given
+// layout and dtypes.
+func CallRegisteredImplementation(
+	backend *gobackend.Backend,
+	implementation *ImplementationRegistration,
+	lhs, rhs, output *gobackend.Buffer,
+	params *NodeData) {
+
+	batchSize := params.BatchSize
+	lhsCrossSize := params.LHSCrossSize
+	rhsCrossSize := params.RHSCrossSize
+	contractingSize := params.ContractingSize
+
+	lhsFlat, rhsFlat, outputFlat := lhs.Flat, rhs.Flat, output.Flat
+	implFnAny := implementation.implFn
+	callFnAny, err := callImplementationDTypePairMap.Get(params.InputDType, params.OutputDType)
+	if err != nil {
+		panic(err)
+	}
+	callFn := callFnAny.(func(any, any, any, any, int, int, int, int, *workerspool.Pool))
+	callFn(implFnAny, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, backend.Workers)
+}
+
+var (
+	//gobackend:dtypemap_pair callImplementationGeneric ints same
+	//gobackend:dtypemap_pair callImplementationGeneric ints int32,int64
+	//gobackend:dtypemap_pair callImplementationGeneric uints same
+	//gobackend:dtypemap_pair callImplementationGeneric uints uint32,uint64
+	//gobackend:dtypemap_pair callImplementationGeneric floats floats
+	//gobackend:dtypemap_pair callImplementationGeneric half float32
+	callImplementationDTypePairMap = gobackend.NewDTypePairMap("callImplementationGeneric")
+)
+
+// callImplementationGeneric calls the registered implementation with the given parameters.
+// If casts all the parameter to the corresponding dtype.
+func callImplementationGeneric[I, O interface {
+	dtypes.Number | dtypes.NumberHalfPrecision
+}](
+	implFnAny any,
+	lhsAny, rhsAny, outputAny any,
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
+	pool *workerspool.Pool) {
+	lhs := lhsAny.([]I)
+	rhs := rhsAny.([]I)
+	output := outputAny.([]O)
+	implFn := implFnAny.(DotGeneralExecFn[I, O])
+	implFn(lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, pool)
 }

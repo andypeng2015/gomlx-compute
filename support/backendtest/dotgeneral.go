@@ -78,7 +78,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 
 	t.Run("Float32", func(t *testing.T) {
 		// Larger example, with multiple axes.
-		y0, err := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+		got, err := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
 			// We construct the input constants directly inside the compute.Function since we don't have
 			// nested slice generators handy.
 			lhs, _ := f.Constant(xslices.Iota(float32(1), 2*3*1*5), 2, 3, 1, 5)
@@ -105,7 +105,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 				{{3230, 3260, 3290, 3320}},
 				{{8255, 8330, 8405, 8480}},
 			}}
-		if ok, diff := testutil.IsEqual(want, y0); !ok {
+		if ok, diff := testutil.IsEqual(want, got); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
 	})
@@ -126,7 +126,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("VeryLarge", func(t *testing.T) {
-		y3, err := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+		got, err := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
 			lhsShape := shapes.Make(dtypes.Float64, 16, 13, 384)
 			lhsFlat := make([]float64, lhsShape.Size())
 			for i := range lhsFlat {
@@ -147,7 +147,8 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("testutil.Exec1 failed: %v", err)
 		}
-		if ok, diff := testutil.IsInDelta(y3.([][][]float64)[0][0][0], 0.7392, 1e-4); !ok {
+		fmt.Printf("\t- %s result: %#v", t.Name(), got)
+		if ok, diff := testutil.IsInDelta(got.([][][]float64)[0][0][0], 0.7392, 1e-4); !ok {
 			t.Fatalf("Result not within delta 1e-4:\n%s", diff)
 		}
 	})
