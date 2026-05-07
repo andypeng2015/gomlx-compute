@@ -217,13 +217,13 @@ func avx512LargePanelFloat32( //alt:f32
 	)
 
 	outputBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedOutput)))
-	rhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedLHS)))
+	rhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedRHS)))
 	lhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedLHS)))
 
 	// Loop 1 (ir): Micro-Kernel Rows (Mr == lhsL1BlockRows)
 	for lhsRowIdx := 0; lhsRowIdx < lhsActiveRows; lhsRowIdx += kernelRows {
-		// Loop 2 (jr): Micro-Kernel Columns (Nr == rhsL1BlockCols)
 		idxRHS := 0
+		// Loop 2 (jr): Micro-Kernel Columns (Nr == rhsL1BlockCols)
 		for rhsColIdx := 0; rhsColIdx < rhsActiveCols; rhsColIdx += kernelCols {
 			// Output index calculation (relative to panel)
 			outputRowStart := lhsRowIdx
@@ -257,6 +257,7 @@ func avx512LargePanelFloat32( //alt:f32
 			// Get the base pointers once
 			rhsRowPtr := rhsBasePtr + uintptr(idxRHS*bytesPerInputElement)
 			lhsRowPtr := lhsBasePtr + uintptr(idxLHS*bytesPerInputElement)
+			idxRHS += contractingLen
 
 			rOffset := uintptr(0)
 			lOffset := uintptr(0)
@@ -391,7 +392,7 @@ func avx512ApplyPackedOutputFloat32( //alt:f32
 
 			// Scalar tail
 			for i := range width - c {
-				output[outputColIdx+i] = packedOutput[packedColIdx+i]
+				output[outputColIdx+i] += packedOutput[packedColIdx+i]
 			}
 
 			// Next row.
