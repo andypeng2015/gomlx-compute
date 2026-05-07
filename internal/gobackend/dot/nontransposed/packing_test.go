@@ -7,23 +7,30 @@ import (
 	"testing"
 )
 
-func TestPackLHS(t *testing.T) {
-	lhsL1KernelRows := 4
-	
+// PackLHSFn is the signature for LHS packing functions.
+type PackLHSFn func(src, dst []float32, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int)
+
+// PackRHSFn is the signature for RHS packing functions.
+type PackRHSFn func(src, dst []float32, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
+
+func runPackLHSTests(t *testing.T, name string, packLHSFn PackLHSFn, lhsL1KernelRows int) {
 	testCases := []struct {
-		rows, cols int
+		rows, cols         int
 		rowStart, colStart int
 	}{
-		{5, 20, 0, 0},
-		{5, 20, 2, 3},
-		{4, 16, 0, 0},
-		{4, 15, 0, 0},
-		{8, 32, 0, 0},
-		{3, 10, 0, 0},
+		{rows: 5, cols: 20, rowStart: 0, colStart: 0},
+		{rows: 5, cols: 20, rowStart: 2, colStart: 3},
+		{rows: 4, cols: 16, rowStart: 0, colStart: 0},
+		{rows: 4, cols: 15, rowStart: 0, colStart: 0},
+		{rows: 8, cols: 32, rowStart: 0, colStart: 0},
+		{rows: 3, cols: 10, rowStart: 0, colStart: 0},
+		// Larger test cases
+		{rows: 128, cols: 256, rowStart: 7, colStart: 11},
+		{rows: 127, cols: 255, rowStart: 0, colStart: 0},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/LHS/%dx%d_at_%d_%d", name, tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
 			src := make([]float32, totalRows*totalCols)
@@ -31,40 +38,41 @@ func TestPackLHS(t *testing.T) {
 				src[i] = float32(i + 1)
 			}
 
-			// Calculate dst size
 			numStrips := (tc.rows + lhsL1KernelRows - 1) / lhsL1KernelRows
 			dstSize := numStrips * tc.cols * lhsL1KernelRows
-			dstNoSIMD := make([]float32, dstSize)
-			dstAVX512 := make([]float32, dstSize)
+			dstExpected := make([]float32, dstSize)
+			dstActual := make([]float32, dstSize)
 
-			packLHS(src, dstNoSIMD, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
-			avx512PackLHSFloat32(src, dstAVX512, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
+			// Reference implementation
+			packLHS(src, dstExpected, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
+			// Implementation under test
+			packLHSFn(src, dstActual, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
 
-			for i := range dstNoSIMD {
-				if dstNoSIMD[i] != dstAVX512[i] {
-					t.Errorf("Mismatch at index %d: noSIMD=%f, avx512=%f", i, dstNoSIMD[i], dstAVX512[i])
-					if i > 10 { break }
+			for i := range dstExpected {
+				if dstExpected[i] != dstActual[i] {
+					t.Fatalf("Mismatch at index %d: expected %f, got %f", i, dstExpected[i], dstActual[i])
 				}
 			}
 		})
 	}
 }
 
-func TestPackRHS(t *testing.T) {
-	rhsL1KernelCols := 32
-	
+func runPackRHSTests(t *testing.T, name string, packRHSFn PackRHSFn, rhsL1KernelCols int) {
 	testCases := []struct {
-		rows, cols int
+		rows, cols         int
 		rowStart, colStart int
 	}{
-		{3, 32, 0, 0},
-		{5, 64, 2, 3},
-		{10, 100, 0, 0},
-		{3, 10, 0, 0},
+		{rows: 3, cols: 32, rowStart: 0, colStart: 0},
+		{rows: 5, cols: 64, rowStart: 2, colStart: 3},
+		{rows: 10, cols: 100, rowStart: 0, colStart: 0},
+		{rows: 3, cols: 10, rowStart: 0, colStart: 0},
+		// Larger test cases
+		{rows: 256, cols: 128, rowStart: 13, colStart: 17},
+		{rows: 255, cols: 127, rowStart: 0, colStart: 0},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/RHS/%dx%d_at_%d_%d", name, tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
 			src := make([]float32, totalRows*totalCols)
@@ -72,23 +80,28 @@ func TestPackRHS(t *testing.T) {
 				src[i] = float32(i + 1)
 			}
 
-			// Calculate dst size
 			numStrips := (tc.cols + rhsL1KernelCols - 1) / rhsL1KernelCols
 			dstSize := numStrips * tc.rows * rhsL1KernelCols
-			dstNoSIMD := make([]float32, dstSize)
-			dstAVX512 := make([]float32, dstSize)
+			dstExpected := make([]float32, dstSize)
+			dstActual := make([]float32, dstSize)
 
-			packRHS(src, dstNoSIMD, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
-			avx512PackRHSFloat32(src, dstAVX512, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			// Reference implementation
+			packRHS(src, dstExpected, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			// Implementation under test
+			packRHSFn(src, dstActual, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
 
-			for i := range dstNoSIMD {
-				if dstNoSIMD[i] != dstAVX512[i] {
-					t.Errorf("Mismatch at index %d: noSIMD=%f, avx512=%f", i, dstNoSIMD[i], dstAVX512[i])
-					if i > 10 { break }
+			for i := range dstExpected {
+				if dstExpected[i] != dstActual[i] {
+					t.Fatalf("Mismatch at index %d: expected %f, got %f", i, dstExpected[i], dstActual[i])
 				}
 			}
 		})
 	}
+}
+
+func TestPackAVX512(t *testing.T) {
+	runPackLHSTests(t, "AVX512", avx512PackLHSFloat32, 4)
+	runPackRHSTests(t, "AVX512", avx512PackRHSFloat32, 32)
 }
 
 func TestApplyPackedOutput(t *testing.T) {
