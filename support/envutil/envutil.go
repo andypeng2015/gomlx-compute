@@ -42,6 +42,18 @@ func ReadBool(name string, defaultValue bool) (bool, error) {
 		val, name, append(xslices.Keys(TrueValues), xslices.Keys(FalseValues)...))
 }
 
+// MustReadBool reads the boolean value of the environment variable with the given name.
+// If not set, it returns the defaultValue.
+//
+// It panics with an informative error if the value is set but it is not able to parse a valid boolean value.
+func MustReadBool(name string, defaultValue bool) bool {
+	result, err := ReadBool(name, defaultValue)
+	if err != nil {
+		panic(errors.Errorf("Invalid value for %q: %+v", name, err))
+	}
+	return result
+}
+
 // ReadInt reads the integer value of the environment variable with the given name.
 // If not set, it returns the defaultValue.
 // It returns an error if the value is set but not a valid integer value.

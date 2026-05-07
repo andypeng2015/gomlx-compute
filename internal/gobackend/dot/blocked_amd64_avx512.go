@@ -17,10 +17,12 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/support/envutil"
 )
 
 func init() {
-	if archsimd.X86.AVX512() {
+	avx512Allowed := envutil.MustReadBool(envutil.SIMD_AVX512_Env, true)
+	if avx512Allowed && archsimd.X86.AVX512() {
 		dotGeneralKernelDTypeMap.Register(dtypes.Float32, gobackend.PriorityArch, buildDotGeneralBlockKernel_avx512_float32)
 		// Adjust block-size: we can be more aggressive with AVX512 support:
 		setDotGeneralTargetBlockSize(16 * 1024)
