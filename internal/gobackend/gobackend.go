@@ -161,7 +161,7 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return "Go Portable Compute Backend"
+	return fmt.Sprintf("Go Portable Compute Backend (parallelism=%d)", b.Workers.MaxParallelism())
 }
 
 // NumDevices return the number of devices available for this Backend.

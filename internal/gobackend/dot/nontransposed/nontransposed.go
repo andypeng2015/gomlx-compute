@@ -1,8 +1,17 @@
 package nontransposed
 
 import (
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/support/envutil"
 	"k8s.io/klog/v2"
+)
+
+const (
+	// EnabledEnv is the environment variable that controls whether the non-transposed
+	// implementations are enabled.
+	// It's on by default, and can be disabled by setting it to false.
+	EnabledEnv = "GOMLX_DOT_NONTRANSPOSED"
 )
 
 // Block/packs parameters for current architecture.
@@ -20,6 +29,23 @@ var (
 	ForceSmallVariant = false
 	ForceLargeVariant = false
 )
+
+const (
+	PriorityNoSIMD = gobackend.PriorityTyped
+	PriorityAVX2   = gobackend.PriorityArch
+	PriorityAVX512 = gobackend.PriorityArch + 1
+)
+
+// NumberNonHalf includes the numbers we support in this package, excluding half-precision floats
+//
+// Notice it doesn't include the complex numbers. They will need to be supported as a separate class.
+type NumberNonHalf = dtypes.NumberNotComplex
+
+// Number includes all the numbers we support in this package: integers, floats, and half-precision floats.
+// But this doesn't define the half-precision methods.
+type Number interface {
+	NumberNonHalf | dtypes.NumberHalfPrecision
+}
 
 func init() {
 	avx512Enabled, err := envutil.ReadBool(envutil.SIMD_AVX512_Env, true)

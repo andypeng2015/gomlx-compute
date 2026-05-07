@@ -13,12 +13,18 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Auto-generate alternate specialized versions of noSIMD operations -- for half-precision input data types.
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_router.go -tags=half
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_small.go -tags=half
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_large.go -tags=half
+
 var (
-	// NoSIMD32Params are generic assumptions for L1/L2/L3 cache sizes for 32 bits dtypes (float32, int32, uint32)
+	// NoSIMDParams are generic assumptions for L1/L2/L3 cache sizes -- it is optimized for 32 bits dtypes
+	// but for now we use it for every type.
 	//
 	// These values are somewhat arbitrary, assuming "standard" modern cache sizes.
 	// They are parameterized so they can be tuned or determined dynamically later.
-	NoSIMD32Params = CacheParams{
+	NoSIMDParams = CacheParams{
 		// Do not change these 2 values: they are hard-coded by the allocated registers in basicSymmetricMicroKernel8x8.
 		LHSL1KernelRows: 2, // Mr: Rows of LHS in local registers.
 		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers.
@@ -41,12 +47,11 @@ var (
 )
 
 func init() {
-	enabled := envutil.MustReadBool("GOMLX_DOT_NOSIMD", true)
-	if enabled {
-		registerNoSIMD(false)
-	} else {
-		klog.Info("NoSIMD disabled")
+	if !envutil.MustReadBool(EnabledEnv, true) {
+		klog.Info("dot/nontransposed MatMul implementations disabled")
+		return
 	}
+	registerNoSIMD(false)
 }
 
 func RegisterNoSIMDForTests() {
@@ -55,52 +60,47 @@ func RegisterNoSIMDForTests() {
 
 func registerNoSIMD(forTests bool) {
 	// DTypePairMap: callImplementationDTypePairMap (ints, same)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int16, noSIMDRouter[int16, int16], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int8, noSIMDRouter[int8, int8], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int16, noSIMDRouter[int16, int16], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int8, noSIMDRouter[int8, int8], PriorityNoSIMD, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (ints, int32,int64)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int32, noSIMDRouter[int16, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int64, noSIMDRouter[int16, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int64, noSIMDRouter[int32, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int32, noSIMDRouter[int64, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int32, noSIMDRouter[int8, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int64, noSIMDRouter[int8, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int32, noSIMDRouter[int16, int32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int64, noSIMDRouter[int16, int64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int64, noSIMDRouter[int32, int64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int32, noSIMDRouter[int64, int32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int32, noSIMDRouter[int8, int32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int64, noSIMDRouter[int8, int64], PriorityNoSIMD, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (uints, same)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint16, noSIMDRouter[uint16, uint16], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint8, noSIMDRouter[uint8, uint8], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint16, noSIMDRouter[uint16, uint16], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint8, noSIMDRouter[uint8, uint8], PriorityNoSIMD, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (uints, uint32,uint64)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint32, noSIMDRouter[uint16, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint64, noSIMDRouter[uint16, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint64, noSIMDRouter[uint32, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint32, noSIMDRouter[uint64, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint32, noSIMDRouter[uint8, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint64, noSIMDRouter[uint8, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint32, noSIMDRouter[uint16, uint32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint64, noSIMDRouter[uint16, uint64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint64, noSIMDRouter[uint32, uint64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint32, noSIMDRouter[uint64, uint32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint32, noSIMDRouter[uint8, uint32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint64, noSIMDRouter[uint8, uint64], PriorityNoSIMD, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (floats, floats)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, noSIMDRouter[float32, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float64, noSIMDRouter[float32, float64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float32, noSIMDRouter[float64, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, noSIMDRouter[float64, float64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, noSIMDRouter[float32, float32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float64, noSIMDRouter[float32, float64], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float32, noSIMDRouter[float64, float32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, noSIMDRouter[float64, float64], PriorityNoSIMD, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (half, float32)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, noSIMDHalfPrecisionRouter[float16.Float16, float32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32], PriorityNoSIMD, forTests)
+	dot.RegisterImplementation("NonTransposed-NoSIMD", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, noSIMDHalfPrecisionRouter[float16.Float16, float32], PriorityNoSIMD, forTests)
 }
-
-// Auto-generate alternate specialized versions of noSIMD operations -- for half-precision input data types.
-//go:generate go run ../../../cmd/alternates_generator -base=nosimd_router.go -tags=half
-//go:generate go run ../../../cmd/alternates_generator -base=nosimd_small.go -tags=half
-//go:generate go run ../../../cmd/alternates_generator -base=nosimd_large.go -tags=half
 
 // GetBuffer simplifies the process of getting a buffer from a backend and getting the flat slice.
 func GetBuffer[T dtypes.Supported](backend *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
@@ -212,9 +212,7 @@ func feedWorkItems(
 //   - rhsCols: number of columns to be copied in the panel (excluding padding), will be padded to a RHSL1KernelCols
 //     multiple with zeros.
 //   - RHSL1KernelCols: number of columns in each "L1 kernel"
-func packRHS[T interface {
-	dtypes.NumberNotComplex | dtypes.NumberHalfPrecision
-}](src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+func packRHS[T Number](src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
 	dstIdx := 0
 	// Iterate over strips of width nr
 	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
@@ -257,9 +255,7 @@ func packRHS[T interface {
 //	packLHS(lhs, packedLhs, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
 //		lhsPanelHeight, contractingPanelWidth,
 //		params.LHSL1KernelRows)
-func packLHS[T interface {
-	dtypes.NumberNotComplex | dtypes.NumberHalfPrecision
-}](src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int) {
+func packLHS[T Number](src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int) {
 	dstIdx := 0
 	// Iterate over strips of height mr
 	for stripRowIdx := 0; stripRowIdx < lhsRows; stripRowIdx += lhsL1KernelRows {
@@ -301,7 +297,7 @@ func packLHS[T interface {
 }
 
 // applyPackedOutput applies the computed packedOutput to the final output.
-func noSIMDApplyPackedOutput[T dtypes.NumberNotComplex](
+func noSIMDApplyPackedOutput[T NumberNonHalf](
 	packedOutput, output []T,
 	isFirstContractingPanel bool,
 	packedOutputRowStride int,

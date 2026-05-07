@@ -11,17 +11,19 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
+type _ = dtypes.DType
+
 // largeNoSIMDGeneric implements a "packing" version of the non-SIMD matrix, and parallelizes if
 // possible.
 //
-//alt:generic func largeNoSIMDGeneric[I, O dtypes.NumberNotComplex](
-func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+//alt:generic func largeNoSIMDGeneric[I, O NumberNonHalf](
+func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
 	backend *gobackend.Backend,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O) {
 
-	params := &NoSIMD32Params
+	params := NoSIMDParams
 	maxWorkers := backend.Workers.AdjustedMaxParallelism()
 
 	// Strides for each matrix in the batch.
@@ -58,7 +60,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotCompl
 				batchLHS, batchRHS, batchOutput,
 				lhsCrossSize, rhsCrossSize, contractingSize,
 				0, lhsCrossSize, 0, rhsCrossSize,
-				NoSIMD32Params,
+				params,
 				packedLHS, packedRHS, packedOutput,
 			)
 			lhsFlatIdx += lhsBatchStride
@@ -74,7 +76,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotCompl
 	wg.Go(func() {
 		feedWorkItems(
 			batchSize, lhsCrossSize, rhsCrossSize,
-			params, maxWorkers, workChan)
+			&params, maxWorkers, workChan)
 	})
 
 	// 2. Saturate (fan-out workers) on workItems.
@@ -105,7 +107,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotCompl
 					batchLhs, batchRhs, batchOutput,
 					lhsCrossSize, rhsCrossSize, contractingSize,
 					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
-					NoSIMD32Params,
+					params,
 					packedLHS, packedRHS, packedOutput,
 				)
 			}
@@ -121,8 +123,8 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotCompl
 //
 // packedLHS and packedRHS must be pre-allocated buffers of appropriate size.
 //
-//alt:generic func largeNoSIMDMatrixSlice[I, O dtypes.NumberNotComplex](
-func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+//alt:generic func largeNoSIMDMatrixSlice[I, O NumberNonHalf](
+func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
 	lhsMatrix, rhsMatrix []I, outputMatrix []O,
 	lhsCrossSize, rhsCrossSize, contractingSize int,
 	rowStart, rowEnd, colStart, colEnd int,
@@ -179,8 +181,8 @@ func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.Num
 //
 // It assumes lhsL1KernelRows=4 and rhsL1KernelCols=4.
 //
-//alt:generic func largeNoSIMDPanel[I, O dtypes.NumberNotComplex](
-func largeNoSIMDPanelHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+//alt:generic func largeNoSIMDPanel[I, O NumberNonHalf](
+func largeNoSIMDPanelHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
 	packedLHS, packedRHS []I,
 	packedOutput []O,
 	lhsPanelRows, rhsPanelCols int,
