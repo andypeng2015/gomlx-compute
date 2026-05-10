@@ -20,12 +20,15 @@ import (
 //
 //alt:f32 func avx512RouterFloat32(
 func avx512RouterBFloat16( //alt:bf16
+	//alt:f64  func avx512RouterFloat64(
 	backend *gobackend.Backend,
 	layout dot.Layout,
 	//alt:f32 lhs, rhs []float32,
 	lhs, rhs []bfloat16.BFloat16, //alt:bf16
+	//alt:f64  lhs, rhs []float64,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []float32) {
+	output []float32) { //alt:f32|bf16
+	//alt:f64  output []float64) {
 
 	// Check if small matrix multiplication kernel can be used.
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
@@ -43,20 +46,23 @@ func avx512RouterBFloat16( //alt:bf16
 	}
 
 	if useSmallVariant {
-		// Vector width: 16 for float32, 32 for bfloat16
+		// Vector width: 16 for float32, 32 for bfloat16, 8 for float64
 		//alt:f32 const vecWidth = 16
 		const vecWidth = 32 //alt:bf16
+		//alt:f64  const vecWidth = 8
 
 		if layout == dot.LayoutNonTransposed {
 			if rhsCrossSize > vecWidth {
 				//alt:f32 avx512SmallFloat32Parallel(
 				avx512SmallBFloat16Parallel( //alt:bf16
+					//alt:f64  avx512SmallFloat64Parallel(
 					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 				return
 			}
 			// No benefit from SIMD:
 			//alt:f32 noSIMDRouter(
 			noSIMDHalfPrecisionRouter( //alt:bf16
+				//alt:f64  noSIMDRouter(
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 			return
 		} else {
@@ -64,12 +70,14 @@ func avx512RouterBFloat16( //alt:bf16
 			if contractingSize >= vecWidth {
 				//alt:f32 avx512SmallFloat32Parallel(
 				avx512SmallBFloat16Parallel( //alt:bf16
+					//alt:f64  avx512SmallFloat64Parallel(
 					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 				return
 			}
 			// No benefit from SIMD:
 			//alt:f32 noSIMDRouter(
 			noSIMDHalfPrecisionRouter( //alt:bf16
+				//alt:f64  noSIMDRouter(
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		}
 		return
@@ -78,5 +86,6 @@ func avx512RouterBFloat16( //alt:bf16
 	// Use the efficient large matrix version:
 	//alt:f32 avx512LargeFloat32(
 	avx512LargeBFloat16( //alt:bf16
+		//alt:f64  avx512LargeFloat64(
 		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 }

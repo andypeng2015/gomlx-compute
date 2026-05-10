@@ -18,8 +18,8 @@ type PackLHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcRowStri
 type PackRHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
 
 // ApplyPackedOutputFn is the signature for functions that apply packed output to the final output.
-type ApplyPackedOutputFn func(
-	packedOutput, output []float32,
+type ApplyPackedOutputFn[T Number] func(
+	packedOutput, output []T,
 	isFirstContractingPanel bool,
 	packedOutputRowStride int,
 	lhsRowOffset, rhsColOffset int,
@@ -193,19 +193,19 @@ func runPackRHSTestsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecis
 	}
 }
 
-func runApplyPackedOutputTests(t *testing.T, applyFn ApplyPackedOutputFn) {
+func runApplyPackedOutputTests[T NumberNonHalf](t *testing.T, applyFn ApplyPackedOutputFn[T]) {
 	height := 3
 	width := 5
 	packedOutputRowStride := 8
 	outputRowStride := 6
 
-	packedOutput := make([]float32, height*packedOutputRowStride)
+	packedOutput := make([]T, height*packedOutputRowStride)
 	for i := range packedOutput {
-		packedOutput[i] = float32(i + 1)
+		packedOutput[i] = T(i + 1)
 	}
 
-	outputNoSIMD := make([]float32, height*outputRowStride+2) // +2 for offset
-	outputActual := make([]float32, height*outputRowStride+2)
+	outputNoSIMD := make([]T, height*outputRowStride+2) // +2 for offset
+	outputActual := make([]T, height*outputRowStride+2)
 
 	// Test isFirstContractingPanel = true
 	t.Run("Apply/Overwrite", func(t *testing.T) {
@@ -214,7 +214,7 @@ func runApplyPackedOutputTests(t *testing.T, applyFn ApplyPackedOutputFn) {
 
 		for i := range outputNoSIMD {
 			if outputNoSIMD[i] != outputActual[i] {
-				t.Fatalf("First panel: Mismatch at index %d: expected %f, got %f", i, outputNoSIMD[i], outputActual[i])
+				t.Fatalf("First panel: Mismatch at index %d: expected %v, got %v", i, outputNoSIMD[i], outputActual[i])
 			}
 		}
 	})
@@ -226,7 +226,7 @@ func runApplyPackedOutputTests(t *testing.T, applyFn ApplyPackedOutputFn) {
 
 		for i := range outputNoSIMD {
 			if outputNoSIMD[i] != outputActual[i] {
-				t.Fatalf("Accumulation: Mismatch at index %d: expected %f, got %f", i, outputNoSIMD[i], outputActual[i])
+				t.Fatalf("Accumulation: Mismatch at index %d: expected %v, got %v", i, outputNoSIMD[i], outputActual[i])
 			}
 		}
 	})

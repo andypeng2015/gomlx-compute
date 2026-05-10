@@ -52,6 +52,41 @@ func TestAVX512(t *testing.T) {
 			runPackLHSTestsHalfPrecision(t, avx512PackLHSKernelRows4[bfloat16.BFloat16], 4)
 			runPackRHSTestsHalfPrecision(t, avx512PackRHSNonTransposed[bfloat16.BFloat16], 32)
 		})
+		t.Run("Float64", func(t *testing.T) {
+			runPackLHSTests(t, avx512PackLHSKernelRows4[float64], 4)
+			runPackRHSTests(t, avx512PackRHSNonTransposed[float64], 16)
+			runApplyPackedOutputTests(t, avx512ApplyPackedOutputFloat64)
+		})
+	})
+
+	t.Run("Transpose/4x8x64bits", func(t *testing.T) {
+		var input [4 * 8]uint64
+		for i := range input {
+			input[i] = uint64(i)
+		}
+
+		v0 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[0*8])))
+		v1 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[1*8])))
+		v2 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[2*8])))
+		v3 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[3*8])))
+
+		q0, q1, q2, q3 := avx512Transpose4x8x64bits(v0, v1, v2, v3)
+
+		var output [4 * 8]uint64
+		q0.Store((*[8]uint64)(unsafe.Pointer(&output[0*8])))
+		q1.Store((*[8]uint64)(unsafe.Pointer(&output[1*8])))
+		q2.Store((*[8]uint64)(unsafe.Pointer(&output[2*8])))
+		q3.Store((*[8]uint64)(unsafe.Pointer(&output[3*8])))
+
+		for c := range 8 { // logical column
+			for r := range 4 { // logical row
+				expected := uint64(r*8 + c)
+				got := output[c*4+r]
+				if got != expected {
+					t.Errorf("At output col %d, row %d: got %d, expected %d", c, r, got, expected)
+				}
+			}
+		}
 	})
 
 	t.Run("Transpose/4x16x32bits", func(t *testing.T) {

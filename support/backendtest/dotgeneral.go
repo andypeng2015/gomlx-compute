@@ -128,7 +128,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		}
 	})
 
-	t.Run("VeryLarge-float64", func(t *testing.T) {
+	t.Run("float64/VeryLarge", func(t *testing.T) {
 		got, err := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
 			lhsShape := shapes.Make(dtypes.Float64, 16, 13, 384)
 			lhsFlat := make([]float64, lhsShape.Size())
@@ -157,7 +157,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		}
 	})
 
-	t.Run("DotProduct-BFloat16-with-f32-acc", func(t *testing.T) {
+	t.Run("bfloat16/DotProduct-with-f32-acc", func(t *testing.T) {
 		// The default accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
 		got, err := testutil.Exec1(backend, []any{
 			[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
@@ -173,23 +173,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		}
 	})
 
-	t.Run("DotProduct-BFloat16-with-f32-acc", func(t *testing.T) {
-		// The default accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
-		got, err := testutil.Exec1(backend, []any{
-			[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
-			[][]bfloat16.BFloat16{{bf16(10)}, {bf16(11)}, {bf16(12)}},
-		}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32})
-		})
-		if err != nil {
-			t.Fatalf("failed with an error: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(float32(10+22+36), got.([][]bfloat16.BFloat16)[0][0].Float32()); !ok {
-			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("DotProduct-Float16", func(t *testing.T) {
+	t.Run("float16/DotProduct", func(t *testing.T) {
 		got, err := testutil.Exec1(backend, []any{
 			[][]float16.Float16{{f16(1), f16(2), f16(3)}},
 			[][]float16.Float16{{f16(10)}, {f16(11)}, {f16(12)}},
@@ -204,7 +188,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		}
 	})
 
-	t.Run("MatMul-Float32", func(t *testing.T) {
+	t.Run("float32/small-matmul", func(t *testing.T) {
 		a := [][]float32{{1, 2}, {3, 4}}
 		b := [][]float32{{10, 11}, {12, 13}}
 
@@ -238,7 +222,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		})
 	})
 
-	t.Run("MatMul-BFloat16", func(t *testing.T) {
+	t.Run("bfloat16/small-matmul", func(t *testing.T) {
 		a := [][]bfloat16.BFloat16{{bf16(1), bf16(2)}, {bf16(3), bf16(4)}}
 		b := [][]bfloat16.BFloat16{{bf16(10), bf16(11)}, {bf16(12), bf16(13)}}
 
@@ -264,6 +248,40 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 				t.Fatalf("testutil.Exec1 failed: %v", err)
 			}
 			want := [][]bfloat16.BFloat16{{bf16(1*10 + 2*11), bf16(1*12 + 2*13)}, {bf16(3*10 + 4*11), bf16(3*12 + 4*13)}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				fmt.Printf("\t- Got: %#v\n", got)
+				fmt.Printf("\t- Want: %#v\n", want)
+				t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+			}
+		})
+	})
+
+	t.Run("float64/small-matmul", func(t *testing.T) {
+		a := [][]float64{{1, 2}, {3, 4}}
+		b := [][]float64{{10, 11}, {12, 13}}
+
+		t.Run("LayoutNonTransposed", func(t *testing.T) {
+			got, err := testutil.Exec1(backend, []any{a, b}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
+			want := [][]float64{{1*10 + 2*12, 1*11 + 2*13}, {3*10 + 4*12, 3*11 + 4*13}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				fmt.Printf("\t- Got: %#v\n", got)
+				fmt.Printf("\t- Want: %#v\n", want)
+				t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+			}
+		})
+		t.Run("LayoutTransposed", func(t *testing.T) {
+			got, err := testutil.Exec1(backend, []any{a, b}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{1}, []int{}, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
+			want := [][]float64{{1*10 + 2*11, 1*12 + 2*13}, {3*10 + 4*11, 3*12 + 4*13}}
 			if ok, diff := testutil.IsEqual(want, got); !ok {
 				fmt.Printf("\t- Got: %#v\n", got)
 				fmt.Printf("\t- Want: %#v\n", want)

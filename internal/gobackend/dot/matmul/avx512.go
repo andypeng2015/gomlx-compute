@@ -21,9 +21,9 @@ import (
 )
 
 // Auto-generate alternate specialized versions of AVX512 operations -- for half-precision input data types.
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f64
 
 var (
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
@@ -42,6 +42,15 @@ var (
 		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
 		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
 		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
+	}
+
+	// AVX512ParamsFloat64 are the parameters to use for Float64, tuned for the 16 registers implementations.
+	AVX512ParamsFloat64 = CacheParams{
+		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
+		RHSL1KernelCols:      16,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 8 values
+		PanelContractingSize: 64,  // Kc: A strip fits in L1 cache
+		LHSPanelCrossSize:    16,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
+		RHSPanelCrossSize:    256, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
 	}
 )
 
@@ -66,6 +75,9 @@ func registerAVX512(forTests bool) {
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
+
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, PriorityAVX512, forTests)
 }
 
 // avx512ReduceSumFloat32x16 performs a horizontal reduction of a Float32x16 vector.
@@ -76,12 +88,24 @@ func avx512ReduceSumFloat32x16(x16 archsimd.Float32x16) float32 {
 	return x4sum.GetElem(0) + x4sum.GetElem(1)
 }
 
+// avx512ReduceSumFloat64x8 performs a horizontal reduction of a Float64x8 vector.
+func avx512ReduceSumFloat64x8(x8 archsimd.Float64x8) float64 {
+	x4 := x8.GetHi().Add(x8.GetLo())
+	x2 := x4.GetHi().Add(x4.GetLo())
+	return x2.GetElem(0) + x2.GetElem(1)
+}
+
 // castToArray16 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
 func castToArray16[T Number](ptr *T) *[16]T {
 	return (*[16]T)(unsafe.Pointer(ptr))
 }
 
-// applyPackedOutputFloat32 applies the computed packedOutput to the final output.
+// castToArray8 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
+func castToArray8[T Number](ptr *T) *[8]T {
+	return (*[8]T)(unsafe.Pointer(ptr))
+}
+
+// avx512ApplyPackedOutputFloat32 applies the computed packedOutput to the final output.
 // This code is hard-coded to Float32 for now.
 func avx512ApplyPackedOutputFloat32(
 	packedOutput, output []float32,
@@ -131,6 +155,69 @@ func avx512ApplyPackedOutputFloat32(
 				outputVal.Store(castToArray16(&output[outputColIdx]))
 				packedColIdx += 16
 				outputColIdx += 16
+			}
+
+			// Scalar tail
+			for i := range width - c {
+				output[outputColIdx+i] += packedOutput[packedColIdx+i]
+			}
+
+			// Next row.
+			packedRowIdx += packedOutputRowStride
+			outputRowIdx += outputRowStride
+		}
+	}
+}
+
+// avx512ApplyPackedOutputFloat64 applies the computed packedOutput to the final output.
+func avx512ApplyPackedOutputFloat64(
+	packedOutput, output []float64,
+	isFirstContractingPanel bool,
+	packedOutputRowStride int,
+	lhsRowOffset, rhsColOffset int, // Global output offsets
+	outputRowStride int,
+	height, width int, // actual amount of data to copy
+) {
+	outputRowIdx := lhsRowOffset*outputRowStride + rhsColOffset
+	packedRowIdx := 0
+	if isFirstContractingPanel {
+		// First contracting panel, so we overwrite to the output (as it may not have been zero-initialized).
+		for range height {
+			c := 0
+			outputColIdx := outputRowIdx
+			packedColIdx := packedRowIdx
+			// Vectorized loop
+			for ; c+8 <= width; c += 8 {
+				packedVal := archsimd.LoadFloat64x8(castToArray8(&packedOutput[packedColIdx]))
+				packedVal.Store(castToArray8(&output[outputColIdx]))
+				packedColIdx += 8
+				outputColIdx += 8
+			}
+
+			// Scalar tail
+			for i := range width - c {
+				output[outputColIdx+i] = packedOutput[packedColIdx+i]
+			}
+
+			// Next row.
+			packedRowIdx += packedOutputRowStride
+			outputRowIdx += outputRowStride
+		}
+
+	} else {
+		// Not the first contracting panel, so we need to add to the existing values.
+		for range height {
+			c := 0
+			outputColIdx := outputRowIdx
+			packedColIdx := packedRowIdx
+			// Vectorized loop
+			for ; c+8 <= width; c += 8 {
+				packedVal := archsimd.LoadFloat64x8(castToArray8(&packedOutput[packedColIdx]))
+				outputVal := archsimd.LoadFloat64x8(castToArray8(&output[outputColIdx]))
+				outputVal = packedVal.Add(outputVal)
+				outputVal.Store(castToArray8(&output[outputColIdx]))
+				packedColIdx += 8
+				outputColIdx += 8
 			}
 
 			// Scalar tail
@@ -341,22 +428,12 @@ func avx512PackLHSKernelRows4[T Number](
 				panelPtr += 256 // 4 x 16 x uint32
 
 			case 8:
-				var tmp0, tmp1, tmp2, tmp3 [64]uint8
-				v0.Store(&tmp0)
-				v1.Store(&tmp1)
-				v2.Store(&tmp2)
-				v3.Store(&tmp3)
-				t0 := (*[8]uint64)(unsafe.Pointer(&tmp0))
-				t1 := (*[8]uint64)(unsafe.Pointer(&tmp1))
-				t2 := (*[8]uint64)(unsafe.Pointer(&tmp2))
-				t3 := (*[8]uint64)(unsafe.Pointer(&tmp3))
-				for i := uintptr(0); i < 8; i++ {
-					*(*uint64)(unsafe.Pointer(panelPtr)) = t0[i]
-					*(*uint64)(unsafe.Pointer(panelPtr + 8)) = t1[i]
-					*(*uint64)(unsafe.Pointer(panelPtr + 16)) = t2[i]
-					*(*uint64)(unsafe.Pointer(panelPtr + 24)) = t3[i]
-					panelPtr += kernelRowsBytes
-				}
+				t0, t1, t2, t3 := avx512Transpose4x8x64bits(v0.AsUint64x8(), v1.AsUint64x8(), v2.AsUint64x8(), v3.AsUint64x8())
+				t0.Store((*[8]uint64)(unsafe.Pointer(panelPtr)))
+				t1.Store((*[8]uint64)(unsafe.Pointer(panelPtr + 64)))
+				t2.Store((*[8]uint64)(unsafe.Pointer(panelPtr + 128)))
+				t3.Store((*[8]uint64)(unsafe.Pointer(panelPtr + 192)))
+				panelPtr += 256
 			case 2:
 				t0, t1, t2, t3 := avx512Transpose4x32x16bits(v0.AsUint16x32(), v1.AsUint16x32(), v2.AsUint16x32(), v3.AsUint16x32())
 				t0.Store((*[32]uint16)(unsafe.Pointer(panelPtr)))

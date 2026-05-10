@@ -114,3 +114,39 @@ func avx512Transpose4x32x16bits(v0, v1, v2, v3 archsimd.Uint16x32) (row0to8, row
 	}
 	return
 }
+
+// avx512Transpose4x8x64bits transposes 4 rows of 8x64-bit elements (uint64) into
+// 8 rows of 4 64-bit elements, where each 2 rows of 4 elements is output together in one ZMM register.
+func avx512Transpose4x8x64bits(v0, v1, v2, v3 archsimd.Uint64x8) (row0to2, row2to4, row4to6, row6to8 archsimd.Uint64x8) {
+	var (
+		// Columns 0-1 → row0to2 (Strips 0-1)
+		t0Indices = [8]uint64{0, 0, 8, 0, 1, 0, 9, 0}
+		// Columns 2-3 → row2to4 (Strips 2-3)
+		t1Indices = [8]uint64{2, 0, 10, 0, 3, 0, 11, 0}
+		// Columns 4-5 → row4to6 (Strips 4-5)
+		t2Indices = [8]uint64{4, 0, 12, 0, 5, 0, 13, 0}
+		// Columns 6-7 → row6to8 (Strips 6-7)
+		t3Indices = [8]uint64{6, 0, 14, 0, 7, 0, 15, 0}
+	)
+	{
+		t00 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t0Indices))
+		t01 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t0Indices))
+		row0to2 = t00.InterleaveLoGrouped(t01)
+	}
+	{
+		t10 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t1Indices))
+		t11 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t1Indices))
+		row2to4 = t10.InterleaveLoGrouped(t11)
+	}
+	{
+		t20 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t2Indices))
+		t21 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t2Indices))
+		row4to6 = t20.InterleaveLoGrouped(t21)
+	}
+	{
+		t30 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t3Indices))
+		t31 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t3Indices))
+		row6to8 = t30.InterleaveLoGrouped(t31)
+	}
+	return
+}
