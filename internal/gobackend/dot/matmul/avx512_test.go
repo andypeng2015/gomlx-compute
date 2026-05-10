@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package simd
+package matmul
 
 import (
 	"fmt"
@@ -54,10 +54,10 @@ func TestAVX512(t *testing.T) {
 
 		q0, q1, q2, q3 := avx512Transpose4x16x32bits(v0, v1, v2, v3)
 
-		fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x16x32bits(v0))
-		fmt.Printf("v1: [%s]\n", transposeIndicesFor4x16x32bits(v1))
-		fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
-			transposeIndicesFor4x16x32bits(v0.InterleaveLoGrouped(v1)))
+		// fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x16x32bits(v0))
+		// fmt.Printf("v1: [%s]\n", transposeIndicesFor4x16x32bits(v1))
+		// fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
+		// 	transposeIndicesFor4x16x32bits(v0.InterleaveLoGrouped(v1)))
 
 		fmt.Printf("q0: [%s]\n", transposeIndicesFor4x16x32bits(q0))
 		fmt.Printf("q1: [%s]\n", transposeIndicesFor4x16x32bits(q1))
@@ -94,10 +94,10 @@ func TestAVX512(t *testing.T) {
 
 		q0, q1, q2, q3 := avx512Transpose4x32x16bits(v0, v1, v2, v3)
 
-		fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x32x16bits(v0))
-		fmt.Printf("v1: [%s]\n", transposeIndicesFor4x32x16bits(v1))
-		fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
-			transposeIndicesFor4x32x16bits(v0.InterleaveLoGrouped(v1)))
+		// fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x32x16bits(v0))
+		// fmt.Printf("v1: [%s]\n", transposeIndicesFor4x32x16bits(v1))
+		// fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
+		// 	transposeIndicesFor4x32x16bits(v0.InterleaveLoGrouped(v1)))
 
 		fmt.Printf("q0: [%s]\n", transposeIndicesFor4x32x16bits(q0))
 		fmt.Printf("q1: [%s]\n", transposeIndicesFor4x32x16bits(q1))

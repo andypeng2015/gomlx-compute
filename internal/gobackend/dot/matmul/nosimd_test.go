@@ -1,31 +1,31 @@
-package simd_test
+package matmul_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute/internal/gobackend/dot"
-	"github.com/gomlx/compute/internal/gobackend/dot/simd"
+	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/gomlx/compute/support/backendtest"
 )
 
 func TestNoSIMD(t *testing.T) {
 	defer func() {
 		dot.ResetTestRegistrations()
-		simd.ForceSmallVariant = false
-		simd.ForceLargeVariant = false
+		matmul.ForceSmallVariant = false
+		matmul.ForceLargeVariant = false
 	}()
 	dot.ResetTestRegistrations()
-	simd.RegisterNoSIMDForTests()
+	matmul.RegisterNoSIMDForTests()
 
 	t.Run("Small", func(t *testing.T) {
-		simd.ForceSmallVariant = true
-		simd.ForceLargeVariant = false
+		matmul.ForceSmallVariant = true
+		matmul.ForceLargeVariant = false
 		backendtest.TestDotGeneral(t, backend)
 	})
 
 	t.Run("Large", func(t *testing.T) {
-		simd.ForceSmallVariant = false
-		simd.ForceLargeVariant = true
+		matmul.ForceSmallVariant = false
+		matmul.ForceLargeVariant = true
 		backendtest.TestDotGeneral(t, backend)
 	})
 }

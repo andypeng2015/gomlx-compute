@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package simd
+package matmul
 
 // The AVX512 implementation must have one generate version per dtype pair, since generics are not supported in archsimd.
 // (Maybe a later version with go-highway or midway will change that)
@@ -59,8 +59,8 @@ func RegisterAVX512ForTests() {
 }
 
 func registerAVX512(forTests bool) {
-	dot.RegisterImplementation("NonTransposed-AVX512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512LargeFloat32, PriorityAVX512, forTests)
-	dot.RegisterImplementation("NonTransposed-AVX512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeBFloat16, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512LargeFloat32, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeBFloat16, PriorityAVX512, forTests)
 }
 
 // castToArray16 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.

@@ -1,9 +1,7 @@
-// Package simd implements various SIMD versions of matrix multiplication (used by DotGeneral),
-// and despite the name, it includes a backoff no-SIMD implementations.
-//
-// It includes implementations for "non-transposed" ([N,K]x[K,M] -> [N,M]) and "transposed" ([N,K]x[M,K]->[N,M])
-// layouts.
-package simd
+// package matmul provides the base implementations of matrx multiply for DotGeneral. It includes a no-SIMD and various
+// SIMD variations, support for "packing" for large matrices, and support for "non-transposed" ([N,K]x[K,M] -> [N,M])
+// and "transposed" ([N,K]x[M,K]->[N,M]) layouts.
+package matmul
 
 import (
 	"github.com/gomlx/compute/dtypes"
@@ -21,12 +19,26 @@ const (
 
 // Block/packs parameters for current architecture.
 type CacheParams struct {
-	LHSL1KernelRows int // or Mr: number of lhs kernel rows going to registers.
-	RHSL1KernelCols int // or Nr: Register Block Width
+	// LHSL1KernelRows (or Mr), the number of lhs kernel rows going to registers.
+	// Set to 2, 4, or multiples of 4.
+	LHSL1KernelRows int
 
-	PanelContractingSize int // Kc: LHS cols or RHS rows to fit in L2/L3
-	LHSPanelCrossSize    int // Mc: L2 rows
-	RHSPanelCrossSize    int // Nc: L3 cols
+	// RHSL1KernelCols (or Nr), the number of rhs kernel columns going to registers.
+	// For SIMD it will typically be large enough for one or two SIMD vector loads.
+	RHSL1KernelCols int
+
+	// PanelContractingSize (or Kc) is the largest size of the RHS and LHF panels (used when packing)
+	// on the contracting dimension.
+	// Selected to make the panel fit into L2/L3 caches.
+	PanelContractingSize int
+
+	// LHSPanelCrossSize (or Mc) is the "cross" size of the LHS and Output panels (used when packing).
+	// Selected to make the panel fit into L2/L3 caches.
+	LHSPanelCrossSize int // Mc: L2 rows
+
+	// RHSPanelCrossSize (or Mc) is the "cross" size of the RHS and Output panels (used when packing).
+	// Selected to make the panel fit into L2/L3 caches.
+	RHSPanelCrossSize int // Nc: L3 cols
 }
 
 var (

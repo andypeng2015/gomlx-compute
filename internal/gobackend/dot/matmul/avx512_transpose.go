@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package simd
+package matmul
 
 import "simd/archsimd"
 

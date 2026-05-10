@@ -2,16 +2,15 @@
 // - Base source file (edit this one): nosimd_large.go
 // - Tag used for this generation: half
 
-package simd
+package matmul
 
 import (
 	"sync"
 
-	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes" //alt:half
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 )
-
-type _ = dtypes.DType
 
 // largeNoSIMDGeneric implements a "packing" version of the non-SIMD matrix, and parallelizes if
 // possible.
@@ -19,6 +18,7 @@ type _ = dtypes.DType
 //alt:generic func largeNoSIMDGeneric[I, O NumberNonHalf](
 func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
 	backend *gobackend.Backend,
+	layout dot.Layout,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O) {
@@ -57,6 +57,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt
 			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			//alt:generic largeNoSIMDMatrixSlice(
 			largeNoSIMDMatrixSliceHalfPrecision( //alt:half
+				layout,
 				batchLHS, batchRHS, batchOutput,
 				lhsCrossSize, rhsCrossSize, contractingSize,
 				0, lhsCrossSize, 0, rhsCrossSize,
@@ -99,12 +100,13 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt
 		defer ReleaseBuffer(packedOutputRef)
 		for item := range workChan {
 			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
-				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
-				batchRhs := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
+				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
+				batchRHS := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
 				//alt:generic largeNoSIMDMatrixSlice(
 				largeNoSIMDMatrixSliceHalfPrecision( //alt:half
-					batchLhs, batchRhs, batchOutput,
+					layout,
+					batchLHS, batchRHS, batchOutput,
 					lhsCrossSize, rhsCrossSize, contractingSize,
 					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
 					params,
@@ -125,6 +127,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt
 //
 //alt:generic func largeNoSIMDMatrixSlice[I, O NumberNonHalf](
 func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
+	layout dot.Layout,
 	lhsMatrix, rhsMatrix []I, outputMatrix []O,
 	lhsCrossSize, rhsCrossSize, contractingSize int,
 	rowStart, rowEnd, colStart, colEnd int,
@@ -140,14 +143,21 @@ func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonH
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-			packRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			if layout == dot.LayoutNonTransposed {
+				packRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			} else {
+				// For LayoutTransposed, the rhs has the same layout as the lhs, so we use packLHS instead.
+				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, rhsCrossSize,
+					contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 
 				// PACK LHS
-				unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+				unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
+					lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
 
 				//alt:generic largeNoSIMDPanel(
 				largeNoSIMDPanelHalfPrecision( //alt:half

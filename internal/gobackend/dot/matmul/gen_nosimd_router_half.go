@@ -2,7 +2,7 @@
 // - Base source file (edit this one): nosimd_router.go
 // - Tag used for this generation: half
 
-package simd
+package matmul
 
 import (
 	"github.com/gomlx/compute/dtypes"
@@ -37,20 +37,39 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 			maxWorkers = backend.Workers.AdjustedMaxParallelism()
 		}
 		if maxWorkers == 1 || matricesPerWorker > batchSize/2 {
-			// Only 1 worker, or the overhead of distributing the processing is not worth it.
-			// Run the DotGeneral in one go (without parallelism).
-			//alt:generic smallNoSIMDGeneric(
-			smallNoSIMDHalfPrecision( //alt:half
-				lhs, rhs,
-				0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-				output)
+			if layout == dot.LayoutNonTransposed {
+				// Only 1 worker, or the overhead of distributing the processing is not worth it.
+				// Run the DotGeneral in one go (without parallelism).
+				//alt:generic smallNoSIMDGeneric(
+				smallNoSIMDHalfPrecision( //alt:half
+					lhs, rhs,
+					0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output)
+			} else {
+				//alt:generic smallNoSIMDGenericTransposed(
+				smallNoSIMDHalfPrecisionTransposed( //alt:half
+					lhs, rhs,
+					0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output)
+
+			}
 		} else {
-			//alt:generic smallNoSIMDGenericParallel(
-			smallNoSIMDHalfPrecisionParallel( //alt:half
-				backend,
-				lhs, rhs,
-				batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-				output, matricesPerWorker)
+			if layout == dot.LayoutNonTransposed {
+				//alt:generic smallNoSIMDGenericParallel(
+				smallNoSIMDHalfPrecisionParallel( //alt:half
+					backend,
+					lhs, rhs,
+					batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output, matricesPerWorker)
+			} else {
+				//alt:generic smallNoSIMDGenericParallelTransposed(
+				smallNoSIMDHalfPrecisionParallelTransposed( //alt:half
+					backend,
+					lhs, rhs,
+					batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output, matricesPerWorker)
+
+			}
 		}
 
 	} else {
@@ -58,6 +77,7 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 		//alt:generic largeNoSIMDGeneric(
 		largeNoSIMDHalfPrecision( //alt:half
 			backend,
+			layout,
 			lhs, rhs,
 			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
 			output)

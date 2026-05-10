@@ -1,4 +1,4 @@
-package simd
+package matmul
 
 import (
 	"github.com/gomlx/compute/dtypes"
@@ -32,20 +32,39 @@ func noSIMDRouter[I, O dtypes.NumberNotComplex]( //alt:generic
 			maxWorkers = backend.Workers.AdjustedMaxParallelism()
 		}
 		if maxWorkers == 1 || matricesPerWorker > batchSize/2 {
-			// Only 1 worker, or the overhead of distributing the processing is not worth it.
-			// Run the DotGeneral in one go (without parallelism).
-			smallNoSIMDGeneric( //alt:generic
-				//alt:half smallNoSIMDHalfPrecision(
-				lhs, rhs,
-				0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-				output)
+			if layout == dot.LayoutNonTransposed {
+				// Only 1 worker, or the overhead of distributing the processing is not worth it.
+				// Run the DotGeneral in one go (without parallelism).
+				smallNoSIMDGeneric( //alt:generic
+					//alt:half smallNoSIMDHalfPrecision(
+					lhs, rhs,
+					0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output)
+			} else {
+				smallNoSIMDGenericTransposed( //alt:generic
+					//alt:half smallNoSIMDHalfPrecisionTransposed(
+					lhs, rhs,
+					0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output)
+
+			}
 		} else {
-			smallNoSIMDGenericParallel( //alt:generic
-				//alt:half smallNoSIMDHalfPrecisionParallel(
-				backend,
-				lhs, rhs,
-				batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-				output, matricesPerWorker)
+			if layout == dot.LayoutNonTransposed {
+				smallNoSIMDGenericParallel( //alt:generic
+					//alt:half smallNoSIMDHalfPrecisionParallel(
+					backend,
+					lhs, rhs,
+					batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output, matricesPerWorker)
+			} else {
+				smallNoSIMDGenericParallelTransposed( //alt:generic
+					//alt:half smallNoSIMDHalfPrecisionParallelTransposed(
+					backend,
+					lhs, rhs,
+					batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+					output, matricesPerWorker)
+
+			}
 		}
 
 	} else {
@@ -53,6 +72,7 @@ func noSIMDRouter[I, O dtypes.NumberNotComplex]( //alt:generic
 		largeNoSIMDGeneric( //alt:generic
 			//alt:half largeNoSIMDHalfPrecision(
 			backend,
+			layout,
 			lhs, rhs,
 			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
 			output)
