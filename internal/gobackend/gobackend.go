@@ -118,11 +118,6 @@ type Backend struct {
 
 	NumLiveExecutions atomic.Int32
 
-	// DotGeneralForceExecutionPath forces a specific DotGeneral execution strategy.
-	// Default (autoSelectPath, the zero value) selects based on matrix size.
-	// When set to normalizedPath, blockedPath, or checkPath, it overrides the automatic selection.
-	DotGeneralForceExecutionPath int
-
 	// OpsExecutionType defines how to execute the ops of a computation.
 	OpsExecutionType OpsExecutionType
 

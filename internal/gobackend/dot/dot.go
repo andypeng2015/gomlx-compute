@@ -5,9 +5,8 @@
 //
 // It provides a registration system for the underlying "MatMul" (matrix
 // multiplication) implementations -- to it allows pluggability of different
-// implementations, so one can easily experiment with it. The sub-package `simd`
-// provides the base implementation, that despite the name also includes a
-// no-SIMD fallback.
+// implementations, so one can easily experiment with it. The sub-package `matmul`
+// provides the base implementation (including some SIMD variants)
 //
 // The actual "MatMul" implementation used is in part selected at build-time
 // (depending on the architecture and tags), at initialization time (based on
@@ -16,22 +15,17 @@
 //
 // Environment variables that can be used to disable certain features:
 //
-//   - GOMLX_DOT_SIMD: set to false to disable the default SIMD and no-SIMD implementations --
+//   - GOMLX_DOT_MATMUL: set to false to disable the default matmul implementation.
 //     if you haven't added other plugin implementations, it will effectively disable DotGeneral.
 //   - GOMLX_SIMD_AVX512: set to false to disable the AVX512 implementation, even if the runtime architecture allows it.
 //   - GOMLX_SIMD_AVX2: set to false to disable the AVX2 implementation, even if the runtime architecture allows it.
 package dot
 
 import (
-	"fmt"
-	"math"
-	"math/bits"
 	"slices"
-	"strings"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -45,11 +39,6 @@ import (
 func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeDotGeneral, gobackend.PriorityGeneric, execDotGeneral)
 	gobackend.RegisterDotGeneral.Register(DotGeneral, gobackend.PriorityGeneric)
-
-	for _, option := range []string{"dotgeneral_normalized", "dotgeneral_blocked", "dotgeneral_check",
-		"dotgeneral_smallmatmul"} {
-		gobackend.KnownOptionsSetters[option] = SetBackendOption
-	}
 }
 
 // NodeData associated to a DotGeneral Node: gathered during graph building, it should include
@@ -61,14 +50,8 @@ type NodeData struct {
 	LHSContractingAxes, LHSBatchAxes                       []int
 	RHSContractingAxes, RHSBatchAxes                       []int
 	BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize int
-	LHSBlockedShape, RHSBlockedShape, OutputBlockedShape   shapes.Shape
 
-	// execPath determines which execution strategy to use. Decided at graph-build time.
-	// Deprecated: use implementation instead.
-	execPath ExecutionPath
-
-	// Implementation for current layout.
-	// This is exclusive to execPath, and meant to replace it.
+	// implementation for current layout.
 	implementation *ImplementationRegistration
 }
 
@@ -78,17 +61,13 @@ func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	if d.BatchSize != o.BatchSize ||
 		d.LHSCrossSize != o.LHSCrossSize ||
 		d.RHSCrossSize != o.RHSCrossSize ||
-		d.ContractingSize != o.ContractingSize ||
-		d.execPath != o.execPath {
+		d.ContractingSize != o.ContractingSize {
 		return false
 	}
 	return slices.Equal(d.LHSContractingAxes, o.LHSContractingAxes) &&
 		slices.Equal(d.LHSBatchAxes, o.LHSBatchAxes) &&
 		slices.Equal(d.RHSContractingAxes, o.RHSContractingAxes) &&
-		slices.Equal(d.RHSBatchAxes, o.RHSBatchAxes) &&
-		d.LHSBlockedShape.Equal(o.LHSBlockedShape) &&
-		d.RHSBlockedShape.Equal(o.RHSBlockedShape) &&
-		d.OutputBlockedShape.Equal(o.OutputBlockedShape)
+		slices.Equal(d.RHSBatchAxes, o.RHSBatchAxes)
 }
 
 // SetSizes sets the dot-general sizes according to the axes dimensions.
@@ -115,27 +94,6 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 		// We could have gotten from lhs or rhs, they must match.
 		d.ContractingSize = lhsShape.Dimensions[d.LHSContractingAxes[0]]
 	}
-}
-
-// SetBackendOption process the configuration options for DotGeneral.
-func SetBackendOption(b *gobackend.Backend, key string) error {
-	switch key {
-	case "dotgeneral_normalized":
-		// Force DotGeneral to use the normalized path (transpose to [B,Cross,Contract] form).
-		b.DotGeneralForceExecutionPath = int(SmallTransposedPath)
-	case "dotgeneral_blocked":
-		// Force DotGeneral to use the blocked/tiled path (cache-efficient for large matrices).
-		b.DotGeneralForceExecutionPath = int(BlockedPath)
-	case "dotgeneral_check":
-		// Run both normalized and blocked paths and compare outputs (for debugging).
-		b.DotGeneralForceExecutionPath = int(CheckPath)
-	case "dotgeneral_smallmatmul":
-		// Force DotGeneral to use the SmallMatMul fast path (for small float32 matrices).
-		b.DotGeneralForceExecutionPath = int(SmallMatMulPath)
-	default:
-		return errors.Errorf("unknown configuration option %q for Go backend!? It shouldn't have been registered, please report an issue in GoMLX.", key)
-	}
-	return nil
 }
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
@@ -227,39 +185,8 @@ func DotGeneral(f *gobackend.Function,
 		}
 	}
 	if params.implementation == nil {
-		// Backoff to deprecated implementations.
-
-		// Select execution path at build time based on problem size and matrix layout.
-		// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
-		params.execPath = selectExecPath(f.RawBuilder.Backend, params)
-		if params.execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed {
-			// The "SmallTransposedPath" takes as input LayoutTransposed, we are forced to transpose the RHS.
-			klog.V(1).Info("DotGeneral selecte SmallTransposedPath, transposing to required LayoutTransposed")
-			rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = transposeSide(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes, LayoutTransposed)
-			if err != nil {
-				return nil, err
-			}
-			params.Layout = LayoutTransposed
-			inputs = []*gobackend.Node{lhs, rhs}
-		}
-		klog.V(1).Infof("DotGeneral execPath for %s layout: %s\n", params.Layout, params.execPath)
-
-		// For blockedPath, pre-block BOTH inputs at graph-build time.
-		// This allows deduplication: if the same tensor is used in multiple DotGenerals,
-		// the blocking is done once and shared.
-		var lhsBlocked, rhsBlocked *gobackend.Node
-		if params.execPath == BlockedPath || params.execPath == CheckPath {
-			params.SetBlockedParams()
-			lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-				params.BatchSize, params.LHSCrossSize, params.ContractingSize)
-			rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
-				params.BatchSize, params.RHSCrossSize, params.ContractingSize)
-			if params.execPath == CheckPath {
-				inputs = []*gobackend.Node{lhsBlocked, rhsBlocked, lhs, rhs}
-			} else {
-				inputs = []*gobackend.Node{lhsBlocked, rhsBlocked}
-			}
-		}
+		return nil, errors.Errorf("no DotGeneral implementation found for layout=%s and dtypes=%s,%s",
+			params.Layout, params.InputDType, params.OutputDType)
 	}
 
 	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
@@ -377,66 +304,7 @@ func convertToAccumulatorDType(f *gobackend.Function, lhs, rhs *gobackend.Node, 
 	return lhs, rhs, params, nil
 }
 
-// ExecutionPath indicates which execution strategy to use for DotGeneral.
-// Path selection happens at graph-build time in DotGeneral(), not at execution time.
-type ExecutionPath int
-
-const (
-	// AutoSelectPath means the execution path should be auto-selected based on matrix size.
-	// This is used only for backend.dotGeneralForceExecutionPath; never stored in params.execPath.
-	AutoSelectPath ExecutionPath = iota
-	// SmallTransposedPath uses the normalized transpose path (small matrices)
-	SmallTransposedPath
-	// BlockedPath uses execDotGeneralBlocked (cache-tiled algorithm, large matrices)
-	BlockedPath
-	// SmallMatMulPath uses the SmallMatMul fast path (small float32 matrices in standard order)
-	SmallMatMulPath
-	// CheckPath runs both paths and compares outputs (for debugging)
-	CheckPath
-)
-
-//go:generate go tool enumer -type ExecutionPath -output=gen_execution_path_enumer.go dot.go
-
-// selectExecPath selects the execution path based on problem size and backend configuration.
-// Called at graph-build time from DotGeneral().
-func selectExecPath(backend *gobackend.Backend, params *NodeData) ExecutionPath {
-	// If a specific path is forced via backend config, use that.
-	execPath := ExecutionPath(backend.DotGeneralForceExecutionPath)
-	if execPath != AutoSelectPath {
-		// Checks whether the forced path is valid for the given problem.
-		switch {
-		case execPath == SmallMatMulPath && params.Layout == LayoutNonTransposed:
-			return execPath
-		case execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed:
-			return execPath
-		case execPath == BlockedPath && params.Layout == LayoutNonTransposed:
-			return execPath
-		}
-		klog.V(1).Infof(
-			"DotGeneral: forced path %s is invalid for problem with input dtype %s, output dtype %s and layout (%s)\n",
-			execPath, params.InputDType, params.OutputDType, params.Layout)
-	}
-
-	// Check for SmallMatMul fast path first.
-	// SmallMatMul is beneficial for small float32 matrices in standard [M,K]×[K,N] order.
-	if UseSmallMatMul(params) {
-		return SmallMatMulPath
-	}
-
-	// Default selection based on problem size.
-	// For large matrices, the blocked path with cache-tiled algorithm is more efficient.
-	crossesSize := params.RHSCrossSize * params.LHSCrossSize
-	blockDim := 1 << DotGeneralTargetBlockLog2Dim[params.InputDType]
-	blockSize := blockDim * blockDim
-	if crossesSize > DotGeneralBlockedPathThreshold*blockSize {
-		return BlockedPath
-	}
-	return SmallTransposedPath
-}
-
 // execDotGeneral executes the DotGeneral operation.
-// The execution path is pre-selected at graph-build time and stored in params.execPath.
-// For blockedPath, inputs are already pre-blocked at build time.
 func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	params := node.Data.(*NodeData)
@@ -447,183 +315,12 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return nil, err
 	}
 
-	if params.implementation != nil {
-		// Use registered implementation.
-		CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
-		return output, nil
+	if params.implementation == nil {
+		return nil, errors.Errorf("no DotGeneral implementation found for layout=%s and dtypes=%s,%s",
+			params.Layout, params.InputDType, params.OutputDType)
 	}
 
-	switch params.execPath {
-	case BlockedPath, CheckPath:
-		// Inputs are pre-blocked at graph-build time. Extract block metadata from input nodes.
-		lhsNode := node.Inputs[0]
-		rhsNode := node.Inputs[1]
-		_, ok := lhsNode.Data.(*preBlockNodeData)
-		if !ok {
-			backend.PutBuffer(output)
-			return nil, errors.Errorf("blockedPath requires pre-blocked LHS input, got %T (node type: %s)",
-				lhsNode.Data, lhsNode.OpType)
-		}
-		rhsBlockData, ok := rhsNode.Data.(*preBlockNodeData)
-		if !ok {
-			backend.PutBuffer(output)
-			return nil, errors.Errorf("blockedPath requires pre-blocked RHS input, got %T (node type: %s)",
-				rhsNode.Data, rhsNode.OpType)
-		}
-		hasBatch := len(rhsBlockData.batchAxes) > 0 && rhsBlockData.batchSize > 1 // batchSize is the same for lhs and rhs
-		err = execDotGeneralBlocked(backend, lhs, rhs, hasBatch, params, output)
-
-		// Now run checks against other algorithms.
-		if err == nil && params.execPath == CheckPath {
-			// The "checkPath" is the debug path: it uses the blocked path as a reference and runs all other possible paths
-			// comparing the results.
-			lhsRaw, rhsRaw := inputs[2], inputs[3]
-			output2, err := backend.GetBuffer(outputShape)
-			if err != nil {
-				return nil, err
-			}
-			output2.Zeros()
-			err = execSmallTransposed(backend, lhsRaw, rhsRaw, params, output2)
-			if err != nil {
-				backend.PutBuffer(output2)
-				backend.PutBuffer(output)
-				return nil, err
-			}
-			err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
-			if err != nil {
-				backend.PutBuffer(output2)
-				backend.PutBuffer(output)
-				return nil, err
-			}
-
-			// Also verify SmallMatMul path for matrices in matmul order
-			rawDType := lhsRaw.RawShape.DType
-			if rawDType < gobackend.MaxDTypes && dotGeneralSmallMatMulDTypeMap.Map[rawDType] != nil &&
-				IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
-					rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) {
-				output2.Zeros()
-				execSmallMatMulFnAny, err := dotGeneralSmallMatMulDTypeMap.Get(rawDType)
-				if err != nil {
-					return nil, err
-				}
-				execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *NodeData, *gobackend.Buffer))
-				// BFloat16/Float16 implementations accumulate in float32 internally but write to native output
-				execSmallMatMulFn(backend, lhsRaw, rhsRaw, params, output2)
-				err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
-				if err != nil {
-					backend.PutBuffer(output2)
-					backend.PutBuffer(output)
-					return nil, err
-				}
-			}
-
-			backend.PutBuffer(output2) // Discard second output, no longer needed
-			return output, nil
-		}
-
-	case SmallMatMulPath:
-		// SmallMatMul fast path: small matrices in standard [M,K]×[K,N] order.
-		// Path was selected at build time based on matrix layout and size.
-		// Supports all numeric dtypes via DTypeMap registration.
-		// BFloat16/Float16 implementations accumulate in float32 internally but write to native output.
-		dtype := lhs.RawShape.DType
-		execSmallMatMulFnAny, err := dotGeneralSmallMatMulDTypeMap.Get(dtype)
-		if err != nil {
-			return nil, err
-		}
-		execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *NodeData, *gobackend.Buffer))
-		execSmallMatMulFn(backend, lhs, rhs, params, output)
-		return output, nil
-
-	case SmallTransposedPath:
-		// Transpose-based normalized path for small matrices
-		output.Zeros()
-		err = execSmallTransposed(backend, lhs, rhs, params, output)
-
-	default:
-		err = errors.Errorf("unknown execution path %d for DotGeneral", params.execPath)
-	}
-
-	if err != nil {
-		backend.PutBuffer(output)
-		return nil, err
-	}
+	// Use registered implementation.
+	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
 	return output, nil
-}
-
-// log2int return the log2(x) for integer values, rounded down.
-// Only defined for positive values.
-func log2int(x int) int {
-	return bits.Len(uint(x)) - 1
-}
-
-var dotGeneralVersionsCheckDelta = 1e-3
-
-func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *NodeData, outputLarge, outputSmall *gobackend.Buffer) error {
-	if klog.V(1).Enabled() {
-		var value0 float64
-		dtype := outputLarge.RawShape.DType
-		switch dtype {
-		case dtypes.Float32:
-			value0 = float64(outputLarge.Flat.([]float32)[0])
-		case dtypes.Float64:
-			value0 = outputLarge.Flat.([]float64)[0]
-		case dtypes.BFloat16:
-			value0 = float64(outputLarge.Flat.([]bfloat16.BFloat16)[0].Float32())
-		}
-
-		fmt.Printf("> %s x %s -> %s (output[...0]=%.5f)\n", lhs.RawShape, rhs.RawShape, outputLarge.RawShape, value0)
-	}
-	messages, err := dotGeneralCheckVersionsCmp(outputLarge, outputSmall)
-	if err == nil {
-		return nil
-	}
-	fmt.Printf("ERROR: dotGeneral check versions failed:\n")
-	fmt.Printf("\t- lhs=%s, lhsContractingAxes=%v, lhsBatchAxes=%v\n",
-		lhs.RawShape, params.LHSContractingAxes, params.LHSBatchAxes)
-	fmt.Printf("\t- rhs=%s, rhsContractingAxes=%v, rhsBatchAxes=%v\n",
-		rhs.RawShape, params.RHSContractingAxes, params.RHSBatchAxes)
-	fmt.Printf("\t- batchSize=%d, lhsCrossSize=%d, rhsCrossAxes=%d, contractingSize=%d\n",
-		params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize)
-	fmt.Printf("\t- output=%s\n", outputLarge.RawShape)
-	fmt.Printf("%s\n", strings.Join(messages, "\n"))
-	return err
-}
-
-func dotGeneralCheckVersionsCmp(outputLarge, outputSmall *gobackend.Buffer) (messages []string, err error) {
-	// Make sure shapes are the same.
-	if !outputLarge.RawShape.Equal(outputSmall.RawShape) {
-		return nil, errors.Errorf("outputs have different shapes")
-	}
-	flatIdx := 0
-	dtype := outputLarge.RawShape.DType
-	var mismatches int
-	switch dtype {
-	case dtypes.Float32:
-		largeFlat := outputLarge.Flat.([]float32)
-		smallFlat := outputSmall.Flat.([]float32)
-		for indices := range outputLarge.RawShape.Iter() {
-			largeValue := largeFlat[flatIdx]
-			smallValue := smallFlat[flatIdx]
-			if math.Abs(float64(largeValue)-float64(smallValue)) > dotGeneralVersionsCheckDelta {
-				if mismatches < 3 {
-					messages = append(
-						messages,
-						fmt.Sprintf("\tDotGeneral: index %v (flatIdx=%d) has a mismatch on versions: large=%f, small=%f", indices, flatIdx, largeValue, smallValue))
-				} else if mismatches == 4 {
-					fmt.Printf("\t...")
-				}
-				mismatches++
-			}
-			flatIdx++
-		}
-
-	default:
-		// Not checking other dtypes.
-	}
-	if mismatches > 0 {
-		return messages, errors.Errorf(
-			"found %d mismatches (out of %d values) between DotGeneral large and small versions", mismatches, outputLarge.RawShape.Size())
-	}
-	return
 }
