@@ -13,9 +13,6 @@ import (
 	"github.com/gomlx/compute/support/envutil"
 )
 
-// GOMLX_SIMD_AVX2_Env is the environment variable to enable/disable AVX2 support.
-const GOMLX_SIMD_AVX2_Env = "GOMLX_SIMD_AVX2"
-
 var (
 	// AVX2ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX2ParamsFloat32 = CacheParams{
@@ -53,7 +50,7 @@ func init() {
 		return
 	}
 
-	allowed := envutil.MustReadBool(GOMLX_SIMD_AVX2_Env, true)
+	allowed := envutil.MustReadBool(envutil.SIMD_AVX2_Env, true)
 	if allowed && archsimd.X86.AVX2() {
 		registerAVX2(false)
 	}
