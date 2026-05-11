@@ -10,6 +10,9 @@ import (
 )
 
 // Float16x32 is an alias for archsimd.Uint16x32 with corresponding utility methods.
+//
+// Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
+// If not available, don't use this, it will crash!
 type Float16x32 archsimd.Uint16x32
 
 // ToFloat32 converts a vector of 32 float16 values (as an archsimd.Uint16x32) to two vectors of 16 float32 values
@@ -69,6 +72,9 @@ func convert16To32(v archsimd.Uint32x16) archsimd.Uint32x16 {
 // LoadFloat16x32 loads 32 Float16 values from the given pointer into a Float16x32 vector.
 //
 // The pointer must be aligned to 32 bytes, just like usual AVX512 loads.
+//
+// Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
+// If not available, don't use this, it will crash!
 func LoadFloat16x32(ptr *[32]Float16) Float16x32 {
 	vec := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(ptr)))
 	return Float16x32(vec)

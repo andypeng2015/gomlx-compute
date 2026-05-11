@@ -11,6 +11,9 @@ import (
 )
 
 func TestBFloat16x32ToFloat32(t *testing.T) {
+	if !archsimd.X86.AVX512() {
+		t.Skip("AVX512 is not supported on this architecture")
+	}
 	var bf16s [32]BFloat16
 	for i := range bf16s {
 		bf16s[i] = From(i * i)
