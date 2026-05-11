@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gomlx/compute/support/sets"
 	"github.com/gomlx/compute/support/xslices"
-	"github.com/gomlx/gomlx/pkg/support/sets"
 	"github.com/pkg/errors"
 )
 
