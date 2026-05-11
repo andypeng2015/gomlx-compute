@@ -59,7 +59,7 @@ func avx2ConvertF16ToF32(v archsimd.Uint32x8) archsimd.Uint32x8 {
 	zeroRes := sign
 
 	// Case: Denormal
-	lz := mantissa.LeadingZeros()
+	lz := avx2LeadingZeros(mantissa)
 	shift := lz.Sub(archsimd.BroadcastUint32x8(21))
 	// exp32 = (1 - shift - 15 + 127) << 23 = (113 - shift) << 23
 	denormExp32 := archsimd.BroadcastUint32x8(113).Sub(shift).ShiftAllLeft(23)
@@ -78,4 +78,30 @@ func avx2ConvertF16ToF32(v archsimd.Uint32x8) archsimd.Uint32x8 {
 	res = res.Or(zeroRes.And(isZeroBits))
 	res = res.Or(denormRes.And(isDenormBits))
 	return res
+}
+
+// avx2LeadingZeros is an AVX2-compatible implementation of LeadingZeros for Uint32x8.
+// The built-in archsimd.Uint32x8.LeadingZeros() currently uses AVX-512 instructions.
+func avx2LeadingZeros(v archsimd.Uint32x8) archsimd.Uint32x8 {
+	// Fill to the right:
+	v = v.Or(v.ShiftAllRight(1))
+	v = v.Or(v.ShiftAllRight(2))
+	v = v.Or(v.ShiftAllRight(4))
+	v = v.Or(v.ShiftAllRight(8))
+	v = v.Or(v.ShiftAllRight(16))
+
+	// Vectorized population count (SWAR):
+	// v = v - ((v >> 1) & 0x55555555)
+	v = v.Sub(v.ShiftAllRight(1).And(archsimd.BroadcastUint32x8(0x55555555)))
+	// v = (v & 0x33333333) + ((v >> 2) & 0x33333333)
+	v = v.And(archsimd.BroadcastUint32x8(0x33333333)).Add(v.ShiftAllRight(2).And(archsimd.BroadcastUint32x8(0x33333333)))
+	// v = (v + (v >> 4)) & 0x0F0F0F0F
+	v = v.Add(v.ShiftAllRight(4)).And(archsimd.BroadcastUint32x8(0x0F0F0F0F))
+	// v = v + (v >> 8)
+	v = v.Add(v.ShiftAllRight(8))
+	// v = v + (v >> 16)
+	v = v.Add(v.ShiftAllRight(16))
+	popcount := v.And(archsimd.BroadcastUint32x8(0x0000003F))
+
+	return archsimd.BroadcastUint32x8(32).Sub(popcount)
 }
