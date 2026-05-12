@@ -63,7 +63,7 @@ func BroadcastInDim(
 	operand := inputs[0]
 
 	opType := compute.OpTypeBroadcastInDim
-	err = shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
+	err = shapeinference.BroadcastInDim(operand.Shape, outputShape, broadcastAxes)
 	if err != nil {
 		return nil, err
 	}

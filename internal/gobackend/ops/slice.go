@@ -125,7 +125,7 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 	}
 
 	// Calculate output shape.
-	outputShape, err := shapeinference.SliceOp(operand.Shape, data.starts, data.limits, data.strides)
+	outputShape, err := shapeinference.Slice(operand.Shape, data.starts, data.limits, data.strides)
 	if err != nil {
 		return nil, err
 	}

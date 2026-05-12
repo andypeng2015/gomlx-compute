@@ -51,7 +51,7 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 	input, kernel := inputs[0], inputs[1]
 
 	// Run shape inference.
-	outputShape, err := shapeinference.ConvGeneralOp(input.Shape, kernel.Shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+	outputShape, err := shapeinference.ConvGeneral(input.Shape, kernel.Shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 	if err != nil {
 		err = errors.WithMessagef(err, "ConvGeneral: input=%s, kernel=%s, output=%s, axes=%+v, strides=%v, paddings=%v, inputDilations=%v, kernelDilations=%v, channelGroupCount=%d, batchGroupCount=%d\n",
 			input.Shape, kernel.Shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)

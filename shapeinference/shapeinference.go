@@ -351,7 +351,7 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 	return
 }
 
-// WhereOp returns the shape resulting from the Where operation.
+// Where returns the shape resulting from the Where operation.
 //
 // Shape constraints for the operation:
 //
@@ -362,7 +362,7 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 //
 // Note: If you need to select between values of different dtypes, use ConvertDType to convert them
 // to a common dtype before calling Where.
-func WhereOp(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
+func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
 	if condition.DType != dtypes.Bool {
 		err = errors.Errorf("condition for Where() must be a boolean, got %s instead", condition)
 		return
@@ -396,11 +396,11 @@ func WhereOp(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err 
 	return
 }
 
-// ReshapeOp to the given dimensions: trivial output shape, but this function also checks
+// Reshape to the given dimensions: trivial output shape, but this function also checks
 // that the sizes are the same.
 //
 // Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
-func ReshapeOp(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
+func Reshape(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
 	if operand.HasDynamicDims() {
 		// Dynamic path: skip size validation (deferred to specialization time).
 		// DynamicDim values in target dims are allowed — they propagate through
@@ -417,10 +417,10 @@ func ReshapeOp(operand shapes.Shape, dims []int) (output shapes.Shape, err error
 	return
 }
 
-// TransposeOp all axes of the operand.
+// Transpose all axes of the operand.
 // There must be one value in permutations for each axis in the operand.
 // The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
-func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape, err error) {
+func Transpose(operand shapes.Shape, permutations []int) (output shapes.Shape, err error) {
 	rank := operand.Rank()
 	if len(permutations) != rank {
 		err = errors.Errorf("Transpose() requires all axes permutations to be defined, operand has shape %s, but %d permutations were given",
@@ -458,8 +458,8 @@ func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape,
 	return
 }
 
-// BroadcastInDimOp verifies that the arguments are valid. The output shape is already known, so nothing is returned.
-func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) error {
+// BroadcastInDim verifies that the arguments are valid. The output shape is already known, so nothing is returned.
+func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int) error {
 	if len(broadcastAxes) != operand.Rank() {
 		return errors.Errorf("there must be exactly one broadcastAxes (%v) per axis in the operand (%s)",
 			broadcastAxes, operand)
@@ -489,8 +489,8 @@ func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) er
 	return nil
 }
 
-// ReduceOp works for the ReduceMax, ReduceMin, ReduceSum and ReduceProduct ops.
-func ReduceOp(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
+// Reduce works for the ReduceMax, ReduceMin, ReduceSum and ReduceProduct ops.
+func Reduce(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
 	if len(axes) == 0 {
 		return operand, nil
 	}
@@ -644,9 +644,9 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 	return output, nil
 }
 
-// ConcatenateOp calculates the output shape of a Concatenate operation.
+// Concatenate calculates the output shape of a Concatenate operation.
 // It takes a slice of input shapes and the dimension along which to concatenate.
-func ConcatenateOp(inputs []shapes.Shape, axis int) (output shapes.Shape, err error) {
+func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err error) {
 	if len(inputs) == 0 {
 		return shapes.Invalid(), errors.Errorf("ConcatenateOp requires at least one input shape")
 	}
@@ -733,11 +733,11 @@ func ConcatenateOp(inputs []shapes.Shape, axis int) (output shapes.Shape, err er
 	return output, nil
 }
 
-// ScatterOp checks that the parameters are consistent. The output shape returned is the unchanged operand -- the scattered
+// Scatter checks that the parameters are consistent. The output shape returned is the unchanged operand -- the scattered
 // updates are applied to the operand, but its shape is unchanged.
 //
 // The Scatter operations indicesAreSorted and uniqueIndices don't play a role in this.
-func ScatterOp(operand, indices, updates shapes.Shape, indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int) (output shapes.Shape, err error) {
+func Scatter(operand, indices, updates shapes.Shape, indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int) (output shapes.Shape, err error) {
 	if operand.DType == dtypes.InvalidDType || indices.DType == dtypes.InvalidDType || updates.DType == dtypes.InvalidDType {
 		return shapes.Invalid(), errors.Errorf("invalid shape for operand (%s), indices (%s) or updates (%s) for ScatterOp", operand, indices, updates)
 	}
@@ -815,13 +815,13 @@ func ScatterOp(operand, indices, updates shapes.Shape, indexVectorAxis int, upda
 	return operand, nil
 }
 
-// SliceOp calculates the output shape for a Slice operation.
+// Slice calculates the output shape for a Slice operation.
 // It checks that starts, limits, and strides have the correct length (matching operand rank),
 // and that the slice parameters are valid for the operand's dimensions.
 // Strides must be positive.
-func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes.Shape, err error) {
+func Slice(operand shapes.Shape, starts, limits, strides []int) (output shapes.Shape, err error) {
 	rank := operand.Rank()
-	opName := "SliceOp"
+	opName := "Slice"
 	if operand.DType == dtypes.InvalidDType {
 		return shapes.Invalid(), errors.Errorf("%s: invalid operand shape %s", opName, operand)
 	}
@@ -874,8 +874,8 @@ func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes
 	return output, nil
 }
 
-// DynamicSliceOp calculates the output shape for a DynamicSlice operation.
-func DynamicSliceOp(operand shapes.Shape, sliceSizes []int) (output shapes.Shape, err error) {
+// DynamicSlice calculates the output shape for a DynamicSlice operation.
+func DynamicSlice(operand shapes.Shape, sliceSizes []int) (output shapes.Shape, err error) {
 	if operand.DType == dtypes.InvalidDType {
 		return output, errors.Errorf("invalid operand shape %s for DynamicSlice", operand)
 	}
@@ -902,8 +902,8 @@ func DynamicSliceOp(operand shapes.Shape, sliceSizes []int) (output shapes.Shape
 	return output, nil
 }
 
-// DynamicUpdateSliceOp calculates the output shape for a DynamicUpdateSlice operation.
-func DynamicUpdateSliceOp(operand, update shapes.Shape) (output shapes.Shape, err error) {
+// DynamicUpdateSlice calculates the output shape for a DynamicUpdateSlice operation.
+func DynamicUpdateSlice(operand, update shapes.Shape) (output shapes.Shape, err error) {
 	if operand.DType != update.DType {
 		return shapes.Invalid(), errors.Errorf("DynamicUpdateSlice requires operand and update to have the same DType, got %s and %s",
 			operand.DType, update.DType)
@@ -915,9 +915,9 @@ func DynamicUpdateSliceOp(operand, update shapes.Shape) (output shapes.Shape, er
 	return operand.Clone(), nil
 }
 
-// ArgMinMaxOp calculates the output shape for an ArgMinMax operation.
+// ArgMinMax calculates the output shape for an ArgMinMax operation.
 // It will be the shape of the operand minus the "reduce" axis.
-func ArgMinMaxOp(operand shapes.Shape, axis int, outputDType dtypes.DType) (output shapes.Shape, err error) {
+func ArgMinMax(operand shapes.Shape, axis int, outputDType dtypes.DType) (output shapes.Shape, err error) {
 	if !outputDType.IsInt() {
 		err = errors.Errorf("ArgMinMax outputDType must be an integer type, got %s", outputDType)
 		return
@@ -950,10 +950,10 @@ func ArgMinMaxOp(operand shapes.Shape, axis int, outputDType dtypes.DType) (outp
 	return
 }
 
-// ReduceWindowOp returns the expected output shape for the operation.
+// ReduceWindow returns the expected output shape for the operation.
 //
 // Notice it doesn't take as input the reductionType parameter, since it doesn't affect the output shape.
-func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
+func ReduceWindow(operand shapes.Shape, windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: invalid operand shape %s", operand)
 	}
@@ -1063,8 +1063,8 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, baseDilatio
 	return result, nil
 }
 
-// ConvGeneralOp returns the expected output shape for the ConvGeneral operation.
-func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
+// ConvGeneral returns the expected output shape for the ConvGeneral operation.
+func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	strides []int, paddings [][2]int,
 	inputDilations, kernelDilations []int,
 	channelGroupCount, batchGroupCount int) (shapes.Shape, error) {
@@ -1171,7 +1171,7 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	}
 
 	// Check that channels (feature dimensions) are valid.
-		inputChannels := input.Dim(axes.InputChannels)
+	inputChannels := input.Dim(axes.InputChannels)
 	outputChannels := kernel.Dim(axes.KernelOutputChannels)
 	if channelGroupCount < 1 {
 		return errorf("channelGroupCount=%d must be >= 1 for input shape %s", channelGroupCount, input)
@@ -1265,8 +1265,8 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	return output, nil
 }
 
-// BitcastOp calculates the output shape for a Bitcast operation.
-func BitcastOp(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shape, err error) {
+// Bitcast calculates the output shape for a Bitcast operation.
+func Bitcast(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shape, err error) {
 	if operand.DType == targetDType {
 		return operand, nil
 	}
@@ -1295,8 +1295,8 @@ func BitcastOp(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Sh
 	return output, nil
 }
 
-// PadOp returns the expected output shape for the Pad operation.
-func PadOp(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
+// Pad returns the expected output shape for the Pad operation.
+func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("PadOp: invalid operand shape %s", operand)
 	}
