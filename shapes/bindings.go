@@ -60,55 +60,45 @@ func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 	return resolved, nil
 }
 
-// ExtractBindings extracts axis bindings by comparing a template shape (with named dynamic axes)
-// against a concrete shape (with all dimensions known).
+// Extract axis bindings by comparing a template shape (with named dynamic axes)
+// against a concrete shape with all dimensions known (presumably given during execution, when the concrete inputs
+// are given).
 //
 // Returns an error if the shapes are incompatible: different ranks, different static dimensions,
 // or inconsistent bindings where the same axis name maps to different concrete values.
-func ExtractBindings(template, concrete Shape) (AxisBindings, error) {
+func (b AxisBindings) Extract(template, concrete Shape) error {
 	if template.Rank() != concrete.Rank() {
-		return nil, errors.Errorf("ExtractBindings: rank mismatch: template %s has rank %d, concrete %s has rank %d",
+		return errors.Errorf("ExtractBindings: rank mismatch: template %s has rank %d, concrete %s has rank %d",
 			template, template.Rank(), concrete, concrete.Rank())
 	}
-	bindings := make(AxisBindings)
 	for i := range template.Dimensions {
 		templateDim := template.Dimensions[i]
 		concreteDim := concrete.Dimensions[i]
 
 		if concreteDim == DynamicDim {
-			return nil, errors.Errorf("ExtractBindings: concrete shape %s has dynamic dimension at axis %d", concrete, i)
+			return errors.Errorf("ExtractBindings: concrete shape %s has a dynamic dimension at axis %d",
+				concrete, i)
 		}
 
 		if templateDim == DynamicDim {
 			name := template.AxisName(i)
 			if name == "" {
-				return nil, errors.Errorf("ExtractBindings: template %s has dynamic dimension at axis %d but no axis name", template, i)
+				return errors.Errorf(
+					"ExtractBindings: template %s has dynamic dimension at axis %d but no axis name",
+					template, i)
 			}
-			if existing, ok := bindings[name]; ok && existing != concreteDim {
-				return nil, errors.Errorf("ExtractBindings: axis %q has conflicting values: %d vs %d", name, existing, concreteDim)
+			if existing, ok := b[name]; ok && existing != concreteDim {
+				return errors.Errorf("ExtractBindings: axis %q has conflicting values: %d vs %d",
+					name, existing, concreteDim)
 			}
-			bindings[name] = concreteDim
+			b[name] = concreteDim
 		} else if templateDim != concreteDim {
-			return nil, errors.Errorf("ExtractBindings: dimension %d mismatch: template has %d, concrete has %d",
+			return errors.Errorf(
+				"ExtractBindings: dimension %d mismatch: template has %d, concrete has %d",
 				i, templateDim, concreteDim)
 		}
 	}
-	return bindings, nil
-}
-
-// MergeBindings merges multiple AxisBindings into one. Returns an error if any axis name
-// has conflicting values across the inputs.
-func MergeBindings(all ...AxisBindings) (AxisBindings, error) {
-	merged := make(AxisBindings)
-	for _, b := range all {
-		for name, val := range b {
-			if existing, ok := merged[name]; ok && existing != val {
-				return nil, errors.Errorf("MergeBindings: axis %q has conflicting values: %d vs %d", name, existing, val)
-			}
-			merged[name] = val
-		}
-	}
-	return merged, nil
+	return nil
 }
 
 // UnifyAxisName resolves the output axis name when combining two axes from different shapes.

@@ -40,12 +40,12 @@ func hasDynamicParameters(params []*Node) bool {
 // shapes against concrete input buffer shapes. Returns merged bindings across all
 // parameters, or an error if shapes are incompatible or bindings conflict.
 func extractBindingsFromInputs(params []*Node, inputs []*Buffer) (shapes.AxisBindings, error) {
-	var allBindings []shapes.AxisBindings
+	bindings := make(shapes.AxisBindings)
 	for i, param := range params {
 		if !param.Shape.IsDynamic() {
 			continue
 		}
-		b, err := shapes.ExtractBindings(param.Shape, inputs[i].RawShape)
+		err := bindings.Extract(param.Shape, inputs[i].RawShape)
 		if err != nil {
 			paramName := ""
 			if pd, ok := param.Data.(*NodeParameter); ok {
@@ -53,12 +53,8 @@ func extractBindingsFromInputs(params []*Node, inputs []*Buffer) (shapes.AxisBin
 			}
 			return nil, errors.WithMessagef(err, "parameter %d %q", i, paramName)
 		}
-		allBindings = append(allBindings, b)
 	}
-	if len(allBindings) == 0 {
-		return shapes.AxisBindings{}, nil
-	}
-	return shapes.MergeBindings(allBindings...)
+	return bindings, nil
 }
 
 // createSpecialization builds a ShapeSpecialization for the given bindings.
