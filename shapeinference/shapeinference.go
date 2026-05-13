@@ -554,8 +554,18 @@ func Transpose(operand shapes.Shape, permutations []int) (output shapes.Shape, e
 	return
 }
 
-// BroadcastInDim verifies that the arguments are valid. The output shape is already known, so nothing is returned.
-func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int) error {
+// BroadcastInDim verifies that the arguments are valid.
+//
+// The output shape is the same as the input is already known, so nothing is returned.
+//
+// Dynamic shapes: When broadcasting, an operand axis with a dynamic length
+// cannot be broadcast and must be preserved as dynamic in the output -- their axis names
+// must exactly match in the outputShape.
+// But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
+// or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
+// by any input parameter will result in an error.
+func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int,
+	knownDynamicAxisNames sets.Set[string]) error {
 	if len(broadcastAxes) != operand.Rank() {
 		return errors.Errorf("there must be exactly one broadcastAxes (%v) per axis in the operand (%s)",
 			broadcastAxes, operand)
@@ -575,13 +585,52 @@ func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int) erro
 				broadcastAxes, axisInOutput, axisInOperand, outputShape.Rank()-1)
 		}
 		preservedSet.Insert(axisInOutput)
-		oDim := operand.Dimensions[axisInOperand]
+		inDim := operand.Dimensions[axisInOperand]
 		outDim := outputShape.Dimensions[axisInOutput]
-		if oDim != shapes.DynamicDim && outDim != shapes.DynamicDim && oDim != 1 && oDim != outDim {
+
+		if inDim == shapes.DynamicDim {
+			if outDim != shapes.DynamicDim {
+				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must be preserved as dynamic in output shape %s", axisInOperand, operand, axisInOperand, axisInOutput, outputShape)
+			}
+			nameOperand := ""
+			if operand.AxisNames != nil {
+				nameOperand = operand.AxisNames[axisInOperand]
+			}
+			nameOutput := ""
+			if outputShape.AxisNames != nil {
+				nameOutput = outputShape.AxisNames[axisInOutput]
+			}
+			if nameOperand != nameOutput {
+				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve its axis name %q, but output shape %s has axis name %q", axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, outputShape, nameOutput)
+			}
+		} else if inDim != 1 && inDim != outDim {
 			return errors.Errorf("the values of outputShape (%v) that are being broadcast (listed in broadcastAxes) "+
 				"must match the corresponding value in the operand shape (%s) or be 1 (if broadcasting), "+
 				"but the value of outputShape.Dimensions[%d]=%d does not match the value in operand.Shape().Dimensions[%d]=%d",
-				outputShape, operand, axisInOutput, outDim, axisInOperand, oDim)
+				outputShape, operand, axisInOutput, outDim, axisInOperand, inDim)
+		}
+
+		if outDim == shapes.DynamicDim && inDim != shapes.DynamicDim {
+			// Newly introduced dynamic axis by broadcasting dimension 1
+			name := ""
+			if outputShape.AxisNames != nil {
+				name = outputShape.AxisNames[axisInOutput]
+			}
+			if knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(name) {
+				return errors.Errorf("cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters (axis %d with name %q, known: %v)", axisInOutput, name, knownDynamicAxisNames)
+			}
+		}
+	}
+
+	for axisInOutput, outDim := range outputShape.Dimensions {
+		if !preservedSet.Has(axisInOutput) && outDim == shapes.DynamicDim {
+			name := ""
+			if outputShape.AxisNames != nil {
+				name = outputShape.AxisNames[axisInOutput]
+			}
+			if knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(name) {
+				return errors.Errorf("cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters (axis %d with name %q, known: %v)", axisInOutput, name, knownDynamicAxisNames)
+			}
 		}
 	}
 	return nil

@@ -9,6 +9,7 @@ import (
 	. "github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/sets"
 	"github.com/gomlx/compute/support/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -879,20 +880,37 @@ func TestTransposeOp_AxisNames(t *testing.T) {
 	})
 }
 
-func TestBroadcastInDimOp_AxisNames(t *testing.T) {
+func TestBroadcastInDim(t *testing.T) {
 	t.Run("DynamicDimMatch", func(t *testing.T) {
 		operand := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		outputShape := S(F32, 32, 512)
-		err := BroadcastInDim(operand, outputShape, []int{0, 1})
+		outputShape := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		err := BroadcastInDim(operand, outputShape, []int{0, 1}, nil)
 		require.NoError(t, err)
 	})
 
 	t.Run("DynamicDimMismatch", func(t *testing.T) {
-		// Static 32 cannot be broadcast to static 64, but dynamic is assumed OK.
-		// Wait, if output is static, it must match or be 1.
-		operand := S(F32, 32, 512)
+		// A dynamic dimension cannot be broadcast to a static dimension.
+		operand := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		outputShape := S(F32, 32, 512)
+		err := BroadcastInDim(operand, outputShape, []int{0, 1}, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must be preserved as dynamic in output shape")
+	})
+
+	t.Run("BroadcastToUnknownDynamicAxis", func(t *testing.T) {
+		// Broadcasting dimension 1 to a dynamic dimension is allowed, if its name is known.
+		operand := S(F32, 1, 512)
 		outputShape := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		err := BroadcastInDim(operand, outputShape, []int{0, 1})
+		err := BroadcastInDim(operand, outputShape, []int{0, 1}, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters")
+	})
+
+	t.Run("BroadcastToKnownDynamicAxis", func(t *testing.T) {
+		// Broadcasting dimension 1 to a dynamic dimension is allowed, if its name is known.
+		operand := SD(F32, []int{-1, 512}, []string{"seqLen", ""})
+		outputShape := SD(F32, []int{-1, -1, 512}, []string{"batch", "seqLen", ""})
+		err := BroadcastInDim(operand, outputShape, []int{1, 2}, sets.MakeWith("batch"))
 		require.NoError(t, err)
 	})
 }
