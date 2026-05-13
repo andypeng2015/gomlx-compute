@@ -235,11 +235,13 @@ func BinaryOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output sh
 		return
 	}
 	if NumberOperations.Has(opType) && !(lhsShape.DType.IsInt() || lhsShape.DType.IsFloat() || lhsShape.DType.IsComplex()) {
-		err = errors.Errorf("numeric BinaryOp %s must have a number (Int32, Float32, Complex64, ...) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf("numeric BinaryOp %s must have a number (Int32, Float32, BFloat16, Complex64, ...) "+
+			"data type as input, got %s", opType, lhsShape)
 		return
 	}
 	if FloatOperations.Has(opType) && !lhsShape.DType.IsFloat() {
-		err = errors.Errorf("float BinaryOp %s must have a float (Float32, Float64, ...) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf("float BinaryOp %s must have a float (Float32, Float64, ...) data type as input, got %s",
+			opType, lhsShape)
 		return
 	}
 	if FloatOrComplexOperations.Has(opType) && !(lhsShape.DType.IsFloat() || lhsShape.DType.IsComplex()) {
@@ -247,7 +249,9 @@ func BinaryOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output sh
 		return
 	}
 	if ComplexOperations.Has(opType) && !lhsShape.DType.IsComplex() {
-		err = errors.Errorf("complex BinaryOp %s must have a complex (Complex64, Complex128) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf(
+			"complex BinaryOp %s must have a complex (Complex64, Complex128) data type as input, got %s",
+			opType, lhsShape)
 		return
 	}
 
@@ -265,9 +269,9 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 
 	// Other cases, either the dimensions match or one of them is 1.
 	if lhsShape.Rank() != rhsShape.Rank() {
-		err = errors.Errorf("if operands are not scalars, their rank must match for BinaryOp (%s), got shapes %s and %s",
+		err = errors.Errorf("if operands are not scalars, their rank must match for BinaryOp (%s); got shapes %s and %s",
 			opType, lhsShape, rhsShape)
-		return
+		return shapes.Invalid(), err
 	}
 	output = lhsShape.Clone()
 	for axis := range output.Rank() {
@@ -279,15 +283,31 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 				output.Dimensions[axis] = rhsDim // broadcast: use rhs (possibly dynamic)
 			} else if rhsDim == 1 {
 				output.Dimensions[axis] = lhsDim // broadcast: use lhs (possibly dynamic)
-			} else {
+			} else if lhsDim == rhsDim {
+				// Both dynamic: they must have mathing symbolic value.
+				if lhsShape.AxisNames[axis] != rhsShape.AxisNames[axis] {
+					err = errors.Errorf(
+						"axis #%d is dynamic for both operands, but have different axis names for BinaryOp (%s), "+
+							"they cannot be implicitly broadcast; got shapes %s and %s",
+						axis, opType, lhsShape, rhsShape)
+					return shapes.Invalid(), err
+				}
 				output.Dimensions[axis] = shapes.DynamicDim // both dynamic or one dynamic non-broadcast
+			} else {
+				// One side is dynamic and the other is not 1.
+				err = errors.Errorf(
+					"axis #%d is dynamic for one operand, and the other is not 1 for BinaryOp (%s), "+
+						"they can't be implicitly broadcast; got shapes %s and %s",
+					axis, opType, lhsShape, rhsShape)
+				return shapes.Invalid(), err
 			}
 			continue
 		}
 		if lhsDim != 1 && rhsDim != 1 && lhsDim != rhsDim {
-			err = errors.Errorf("dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got shapes %s and %s",
+			err = errors.Errorf(
+				"dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got shapes %s and %s",
 				axis, opType, lhsShape, rhsShape)
-			return
+			return shapes.Invalid(), err
 		}
 		output.Dimensions[axis] = max(lhsDim, rhsDim)
 	}
@@ -295,12 +315,13 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 	// Unify axis names.
 	output.AxisNames, err = shapes.UnifyAxisNames(lhsShape, rhsShape)
 	if err != nil {
-		err = errors.Wrapf(err, "axis name conflict in BinaryOp (%s)", opType)
+		return shapes.Invalid(), errors.Wrapf(err, "axis name conflict in BinaryOp (%s)", opType)
 	}
-	return
+	return output, nil
 }
 
-// ComparisonOp returns the broadcast shape with dtype set to Bool, for comparison operations (Equal, LessThan, GreaterOrEqual, etc.)
+// ComparisonOp returns the broadcast shape with dtype set to Bool, for comparison operations (Equal, LessThan,
+// GreaterOrEqual, etc.)
 func ComparisonOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output shapes.Shape, err error) {
 	if !ComparisonOperations.Has(opType) {
 		err = errors.Errorf("operation %s is not in the ComparisonOperations set, cannot process it with ComparisonOp", opType)
@@ -489,7 +510,9 @@ func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int) erro
 	preservedSet := sets.Make[int](len(broadcastAxes))
 	for axisInOperand, axisInOutput := range broadcastAxes {
 		if axisInOutput < 0 || axisInOutput >= outputShape.Rank() {
-			return errors.Errorf("broadcastAxes (%v) defines a value out-of-range (%d-th value -> %d), they must be between 0 and outputShape.Rank()-1=%d",
+			return errors.Errorf(
+				"broadcastAxes (%v) defines a value out-of-range (%d-th value -> %d), they must be "+
+					"between 0 and outputShape.Rank()-1=%d",
 				broadcastAxes, axisInOperand, axisInOutput, outputShape.Rank()-1)
 		}
 		if preservedSet.Has(axisInOutput) {
