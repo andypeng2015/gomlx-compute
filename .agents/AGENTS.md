@@ -92,7 +92,8 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 
 - For backend tests that could be used for any backend, write them in `support/backendtest` so other
   backends can benefit.
-
+- We DONT depend on testify or other test libraries: we are trying to minimize external dependencies.
+- Use the locally defined `support/testutil` for test utilities for equality (or InDelta or InRelativeDelta comparisons of buffers, etc.).
 
 ### Follow Existing Patterns
 
