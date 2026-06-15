@@ -1,3 +1,7 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64 && goexperiment.simd
+
 package matmul
 
 import (
@@ -12,6 +16,10 @@ import (
 )
 
 func TestAVX512(t *testing.T) {
+	if !archsimd.X86.AVX512() {
+		t.Skip("AVX2 is not supported on this architecture")
+	}
+
 	t.Run("Pack", func(t *testing.T) {
 		t.Run("Float32", func(t *testing.T) {
 			runPackLHSTests(t, avx512PackLHSKernelRows4[float32], 4)
