@@ -430,7 +430,7 @@ func randomUint8(n int) []uint8 {
 // BenchmarkQuantizedDense compares fused quantized-dense (which uses highway SIMD
 // when available) against a decomposed path and float32 Dense as a reference.
 //
-// The decomposed path is only benchmarked for Int8 because the simplego backend
+// The decomposed path is only benchmarked for Int8 because the go backend
 // does not support bitwise shift ops needed for NF4/Int4 nibble extraction.
 func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
