@@ -323,6 +323,34 @@ func TestNoDedup(t *testing.T) {
 		}
 	})
 
+	t.Run("OptimizationBarrier", func(t *testing.T) {
+		be, err := gobackend.New("")
+		if err != nil {
+			t.Fatalf("Failed to create backend: %v", err)
+		}
+		defer be.Finalize()
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
+
+		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter: %v", err)
+		}
+
+		outs1, err := mainFn.OptimizationBarrier(x)
+		if err != nil {
+			t.Fatalf("Failed to create OptimizationBarrier 1: %v", err)
+		}
+		outs2, err := mainFn.OptimizationBarrier(x)
+		if err != nil {
+			t.Fatalf("Failed to create OptimizationBarrier 2: %v", err)
+		}
+
+		if outs1[0] == outs2[0] {
+			t.Error("OptimizationBarriers on the same inputs should NOT be deduplicated")
+		}
+	})
+
 	t.Run("DifferentConstants", func(t *testing.T) {
 		be, err := gobackend.New("")
 		if err != nil {

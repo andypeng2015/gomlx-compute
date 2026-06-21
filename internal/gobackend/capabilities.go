@@ -127,6 +127,7 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeTranspose:            true,
 		compute.OpTypeWhere:                true,
 		compute.OpTypeConvGeneral:          true,
+		compute.OpTypeOptimizationBarrier:   true,
 
 		// Control flow operations:
 		compute.OpTypeCall:  true,
