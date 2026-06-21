@@ -31,4 +31,5 @@ func RunAll(t *testing.T, b compute.Backend, opts *AllTestsConfiguration) {
 	t.Run("SpecialOps", func(t *testing.T) { TestSpecialOps(t, b) })
 	t.Run("FusedOps", func(t *testing.T) { TestFusedOps(t, b) })
 	t.Run("DotGeneral", func(t *testing.T) { TestDotGeneral(t, b) })
+	t.Run("Barriers", func(t *testing.T) { TestBarriers(t, b) })
 }

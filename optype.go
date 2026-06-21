@@ -117,6 +117,8 @@ const (
 	OpTypeTanh
 	OpTypeTranspose
 	OpTypeWhere
+	OpTypeOptimizationBarrier
+	OpTypeSchedulingBarrier
 
 	// Control flow operations
 
