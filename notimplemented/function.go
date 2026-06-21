@@ -115,3 +115,8 @@ func (f Function) If(pred compute.Value, trueBranch, falseBranch compute.Functio
 	[]compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeIf)
 }
+
+func (f Function) OptimizationBarrier(operands ...compute.Value) ([]compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeOptimizationBarrier)
+}
+

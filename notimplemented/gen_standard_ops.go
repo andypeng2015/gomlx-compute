@@ -805,6 +805,12 @@ func (f Function) ScatterSum(operand compute.Value, scatterIndices compute.Value
 	return nil, f.baseErrFn(compute.OpTypeScatterSum)
 }
 
+// SchedulingBarrier introduces a scheduling barrier.
+// Returned value is identity to the operand, but it is guaranteed to depend on all the dependencies.
+func (f Function) SchedulingBarrier(operand compute.Value, dependencies ...compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSchedulingBarrier)
+}
+
 // SelectAndScatterMax runs windows (similar to ReduceWindow) over the operand, selects values to update the output (like ScatterAdd)
 // It selects the values in the window such that it works as reverse for a PoolMax operation.
 // See details in https://openxla.org/xla/operation_semantics#selectandscatter

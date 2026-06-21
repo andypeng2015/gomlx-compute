@@ -813,4 +813,13 @@ type StandardOps interface {
 	//
 	// If either condition, onTrue or onFalse is a scalar, it will be broadcasted to the shape of the other operands.
 	Where(condition, onTrue, onFalse Value) (Value, error)
+
+	// OptimizationBarrier introduces an optimization barrier.
+	// Returned values are identity to the operands, but they prevent the compiler from optimizing across the barrier.
+	OptimizationBarrier(operands ...Value) ([]Value, error)
+
+	// SchedulingBarrier introduces a scheduling barrier.
+	// Returned value is identity to the operand, but it is guaranteed to depend on all the dependencies.
+	SchedulingBarrier(operand Value, dependencies ...Value) (Value, error)
 }
+

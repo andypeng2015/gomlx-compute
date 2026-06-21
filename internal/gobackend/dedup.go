@@ -85,6 +85,12 @@ func (f *Function) GetOrCreateNode(
 			opType, i, node.Function.name, f.name))
 	}
 
+	if opType == compute.OpTypeOptimizationBarrier || opType == compute.OpTypeSchedulingBarrier {
+		n = f.NewNode(opType, shape, inputs...)
+		n.Data = data
+		return n, false
+	}
+
 	// Try to find existing node using function-local dedup.
 	key := MakeNodeDedupKey(opType, inputs)
 	candidates := f.nodeDedup[key]

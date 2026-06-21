@@ -585,6 +585,14 @@ func (f *Function) NotEqualTotalOrder(lhs compute.Value, rhs compute.Value) (com
 	return RegisterNotEqualTotalOrder.Fn(f, lhs, rhs)
 }
 
+func (f *Function) OptimizationBarrier(operands ...compute.Value) ([]compute.Value, error) {
+	if RegisterOptimizationBarrier.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.OptimizationBarrier(operands...)
+	}
+	return RegisterOptimizationBarrier.Fn(f, operands...)
+}
+
 func (f *Function) Pad(x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
 	if RegisterPad.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -775,6 +783,14 @@ func (f *Function) ScatterSum(operand compute.Value, scatterIndices compute.Valu
 		return f.Function.ScatterSum(operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
 	}
 	return RegisterScatterSum.Fn(f, operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+}
+
+func (f *Function) SchedulingBarrier(operand compute.Value, dependencies ...compute.Value) (compute.Value, error) {
+	if RegisterSchedulingBarrier.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.SchedulingBarrier(operand, dependencies...)
+	}
+	return RegisterSchedulingBarrier.Fn(f, operand, dependencies...)
 }
 
 func (f *Function) SelectAndScatterMax(operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error) {
@@ -1115,6 +1131,9 @@ var (
 	RegisterNotEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "NotEqualTotalOrder",
 	}
+	RegisterOptimizationBarrier = OpHandlerRegistration[func(f *Function, operands ...compute.Value) ([]compute.Value, error)]{
+		Method: "OptimizationBarrier",
+	}
 	RegisterPad = OpHandlerRegistration[func(f *Function, x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error)]{
 		Method: "Pad",
 	}
@@ -1186,6 +1205,9 @@ var (
 	}
 	RegisterScatterSum = OpHandlerRegistration[func(f *Function, operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error)]{
 		Method: "ScatterSum",
+	}
+	RegisterSchedulingBarrier = OpHandlerRegistration[func(f *Function, operand compute.Value, dependencies ...compute.Value) (compute.Value, error)]{
+		Method: "SchedulingBarrier",
 	}
 	RegisterSelectAndScatterMax = OpHandlerRegistration[func(f *Function, operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error)]{
 		Method: "SelectAndScatterMax",
