@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -254,7 +254,7 @@ func reduceWindowMaxBuildUpdateFn[T gobackend.PODNumericConstraints](operand, ou
 	}
 }
 
-func reduceWindowMaxBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowMaxBuildUpdateFnHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -271,7 +271,7 @@ func reduceWindowMinBuildUpdateFn[T gobackend.PODNumericConstraints](operand, ou
 	}
 }
 
-func reduceWindowMinBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowMinBuildUpdateFnHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -288,7 +288,7 @@ func reduceWindowSumBuildUpdateFn[T gobackend.PODNumericConstraints](operand, ou
 	}
 }
 
-func reduceWindowSumBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowSumBuildUpdateFnHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -305,7 +305,7 @@ func reduceWindowProductBuildUpdateFn[T gobackend.PODNumericConstraints](operand
 	}
 }
 
-func reduceWindowProductBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowProductBuildUpdateFnHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {

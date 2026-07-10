@@ -9,7 +9,7 @@
 package matmul
 
 import (
-	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -20,8 +20,8 @@ import (
 // smallNoSIMDGenericParallel implements a parallelized version of the non-SIMD matrix
 // multiplication for the non-transposed layout.
 //
-//alt:generic func smallNoSIMDGenericParallel[I, O dtypes.NumberNotComplex](
-func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+//alt:generic func smallNoSIMDGenericParallel[I, O gotype.NumericNotComplex](
+func smallNoSIMDHalfPrecisionParallel[I gotype.HalfPrecision[I], O gotype.NumericNotComplex]( //alt:half
 	backend *gobackend.Backend,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
@@ -59,8 +59,8 @@ func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.Number
 //
 // It is used for small inputs, where packing the data is not worth the cost.
 //
-//alt:generic func smallNoSIMDGeneric[I, O dtypes.NumberNotComplex](
-func smallNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+//alt:generic func smallNoSIMDGeneric[I, O gotype.NumericNotComplex](
+func smallNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.NumericNotComplex]( //alt:half
 	lhs, rhs []I,
 	batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O) {
